@@ -1,0 +1,7 @@
+node_modules/
+workspace/reportes/*
+!workspace/reportes/.gitkeep
+.knk-suite/
+.DS_Store
+*.log
+/tmp/

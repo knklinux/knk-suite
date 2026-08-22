@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  kali:
+    build:
+      context: .
+      dockerfile: kali.Dockerfile
+    container_name: knk-kali
+    hostname: knk-kali
+    volumes:
+      - ../data:/data
+      - ../workspace:/workspace
+    restart: unless-stopped
+    command: ["echo '🐉 Kali listo. Herramientas: \$(which nmap ffuf nuclei subfinder amass 2>/dev/null | tr \"\\n\" \" \")'; sleep infinity"]

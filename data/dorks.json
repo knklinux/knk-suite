@@ -1,0 +1,155 @@
+{
+  "categorias": [
+    {
+      "id": "subdominios",
+      "nombre": "Subdominios y hosts",
+      "dorks": [
+        "site:*.{d} -www",
+        "site:{d} -www.{d}",
+        "site:*.{d} intitle:index.of"
+      ]
+    },
+    {
+      "id": "archivos-expuestos",
+      "nombre": "Archivos sensibles expuestos",
+      "dorks": [
+        "site:{d} filetype:env",
+        "site:{d} filetype:sql",
+        "site:{d} filetype:log",
+        "site:{d} filetype:bak",
+        "site:{d} filetype:yml",
+        "site:{d} filetype:yaml",
+        "site:{d} filetype:json",
+        "site:{d} filetype:xml",
+        "site:{d} filetype:pdf \"password\"",
+        "site:{d} filetype:docx OR filetype:xlsx \"confidencial\"",
+        "site:{d} filetype:php intext:password",
+        "site:{d} filetype:ini OR filetype:cfg"
+      ]
+    },
+    {
+      "id": "paneles-admin",
+      "nombre": "Paneles y login",
+      "dorks": [
+        "site:{d} intitle:\"admin\"",
+        "site:{d} inurl:admin",
+        "site:{d} intitle:\"login\"",
+        "site:{d} inurl:login OR inurl:signin",
+        "site:{d} inurl:dashboard",
+        "site:{d} intitle:\"control panel\"",
+        "site:{d} inurl:phpmyadmin OR inurl:adminer"
+      ]
+    },
+    {
+      "id": "config-backups",
+      "nombre": "Configuración y backups",
+      "dorks": [
+        "site:{d} inurl:backup",
+        "site:{d} inurl:config",
+        "site:{d} inurl:old OR inurl:new OR inurl:test",
+        "site:{d} inurl:tmp OR inurl:temp",
+        "site:{d} inurl:private",
+        "site:{d} intitle:\"index of\" \"backup\"",
+        "site:{d} intitle:\"index of\" \"config\""
+      ]
+    },
+    {
+      "id": "git-y-codigo",
+      "nombre": "Exposición de código y git",
+      "dorks": [
+        "site:{d} \".git/config\"",
+        "site:{d} intitle:\"index of\" \".git\"",
+        "site:{d} inurl:.git",
+        "site:{d} intitle:\"index of\" \".env\"",
+        "site:{d} \".env\" \"DB_PASSWORD\"",
+        "site:{d} \"BEGIN RSA PRIVATE KEY\"",
+        "site:{d} \"-----BEGIN OPENSSH PRIVATE KEY-----\"",
+        "site:{d} inurl:src OR inurl:source"
+      ]
+    },
+    {
+      "id": "cloud-buckets",
+      "nombre": "Buckets cloud abiertos",
+      "dorks": [
+        "site:s3.amazonaws.com \"{d}\"",
+        "site:storage.googleapis.com \"{d}\"",
+        "site:blob.core.windows.net \"{d}\"",
+        "site:firebasestorage.googleapis.com \"{d}\"",
+        "site:digitaloceanspaces.com \"{d}\""
+      ]
+    },
+    {
+      "id": "apis-y-keys",
+      "nombre": "APIs, tokens y secretos",
+      "dorks": [
+        "site:{d} \"api_key\" OR \"apikey\"",
+        "site:{d} \"secret_key\" OR \"client_secret\"",
+        "site:{d} \"aws_access_key_id\"",
+        "site:{d} \"Bearer \" intext:token",
+        "site:{d} inurl:swagger OR inurl:api-docs OR inurl:openapi",
+        "site:{d} inurl:graphql",
+        "site:{d} intitle:\"swagger ui\"",
+        "site:{d} \"x-api-key\""
+      ]
+    },
+    {
+      "id": "emails-osint",
+      "nombre": "Emails y datos de empleados",
+      "dorks": [
+        "site:{d} \"@{d}\" filetype:csv",
+        "site:{d} \"@{d}\" intext:email",
+        "intext:\"@{d}\" \"password reset\"",
+        "site:linkedin.com \"{d}\"",
+        "site:github.com \"{d}\" email"
+      ]
+    },
+    {
+      "id": "errores-info",
+      "nombre": "Errores y exposición de información",
+      "dorks": [
+        "site:{d} intitle:\"index of\"",
+        "site:{d} inurl:phpinfo.php",
+        "site:{d} \"stack trace\" OR \"debug\"",
+        "site:{d} \"SQL syntax\" OR \"mysql_fetch\"",
+        "site:{d} intitle:\"500 Internal Server Error\"",
+        "site:{d} \"exception\" \"at com.\""
+      ]
+    },
+    {
+      "id": "dashboards",
+      "nombre": "Dashboards y herramientas expuestas",
+      "dorks": [
+        "site:{d} intitle:\"grafana\"",
+        "site:{d} intitle:\"kibana\"",
+        "site:{d} intitle:\"jenkins\"",
+        "site:{d} intitle:\"sonarqube\"",
+        "site:{d} intitle:\"prometheus\"",
+        "site:{d} intitle:\"netdata\"",
+        "site:{d} intitle:\"phpmyadmin\""
+      ]
+    },
+    {
+      "id": "tecnologias",
+      "nombre": "Tecnologías y versiones",
+      "dorks": [
+        "site:{d} \"powered by\"",
+        "site:{d} \"wordpress\" wp-content",
+        "site:{d} \"joomla\"",
+        "site:{d} inurl:wp-admin OR inurl:wp-login",
+        "site:{d} \"generator\" content=\"\""
+      ]
+    },
+    {
+      "id": "interesantes",
+      "nombre": "Otros de interés",
+      "dorks": [
+        "site:{d} inurl:callback OR inurl:redirect OR inurl:return",
+        "site:{d} inurl:download OR inurl:file",
+        "site:{d} inurl:webhook",
+        "site:{d} inurl:upload",
+        "site:{d} intitle:\"upload\"",
+        "site:{d} \"web.config\" OR \"application.properties\""
+      ]
+    }
+  ]
+}

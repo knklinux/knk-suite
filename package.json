@@ -1,0 +1,14 @@
+{
+  "name": "knk-suite",
+  "version": "2.0.0",
+  "description": "KnkSuite v2 — Bug bounty pipeline todo-en-uno. URL → OPPLAN → recon → scan → fuzz → exploit → reporte. Un solo puerto, GUI web, Docker Kali para herramientas.",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "node --watch backend/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

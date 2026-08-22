@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KnkSuite v2</title>
+<style>
+  :root { color-scheme: dark; --bg: #0d1117; --card: #161b22; --border: #21262d; --primary: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; --muted: #8b949e; --text: #c9d1d9; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: ui-monospace, 'Cascadia Code', Menlo, monospace; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar { width: 240px; background: var(--card); border-right: 1px solid var(--border); padding: 20px 16px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
+  .sidebar h1 { font-size: 16px; color: var(--primary); margin-bottom: 20px; letter-spacing: 1px; }
+  .sidebar .nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar .nav button { background: none; border: none; color: var(--muted); text-align: left; padding: 8px 12px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; transition: all .15s; }
+  .sidebar .nav button:hover, .sidebar .nav button.active { background: #1f6feb22; color: var(--primary); }
+  .sidebar .status { margin-top: auto; font-size: 11px; color: var(--muted); padding: 10px 0; border-top: 1px solid var(--border); }
+  .sidebar .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .sidebar .status .dot.on { background: var(--green); }
+  .sidebar .status .dot.off { background: var(--red); }
+  .main { flex: 1; padding: 28px 32px; overflow-y: auto; }
+  .main h2 { font-size: 18px; margin-bottom: 20px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card h3 { font-size: 13px; color: var(--primary); margin-bottom: 10px; }
+  .card .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; }
+  .card .kv .k { color: var(--muted); }
+  .card .kv .v { color: var(--text); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .badge-ok { background: #1f6feb33; color: var(--green); border: 1px solid #3fb95044; }
+  .badge-warn { background: #d2992233; color: var(--yellow); border: 1px solid #d2992244; }
+  .badge-err { background: #da363333; color: var(--red); border: 1px solid #da363344; }
+  .finding { font-size: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .finding .f-type { color: var(--primary); width: 100px; }
+  .finding .f-sum { flex: 1; }
+  .finding .f-sev { width: 60px; text-align: right; }
+  .pipeline-phase { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .pipeline-phase .phase-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px; }
+  .pipeline-phase .phase-num.done { background: var(--green); color: #000; }
+  .pipeline-phase .phase-num.pending { background: var(--border); color: var(--muted); }
+  .pipeline-phase .phase-num.active { background: var(--primary); color: #000; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  input, textarea, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font: inherit; font-size: 13px; width: 100%; margin-bottom: 10px; }
+  input:focus, textarea:focus { outline: none; border-color: var(--primary); }
+  button.btn { background: var(--primary); color: #000; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; font-weight: bold; transition: opacity .15s; }
+  button.btn:hover { opacity: .85; }
+  button.btn:disabled { opacity: .4; cursor: not-allowed; }
+  button.btn-sm { padding: 6px 14px; font-size: 12px; }
+  button.btn-outline { background: none; border: 1px solid var(--border); color: var(--primary); padding: 10px 20px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; }
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--card); border: 1px solid var(--border); padding: 12px 20px; border-radius: 8px; font-size: 12px; animation: slideIn .3s; z-index: 1000; }
+  @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .pre { white-space: pre-wrap; font-size: 11px; background: var(--bg); border-radius: 6px; padding: 12px; max-height: 300px; overflow: auto; }
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab-bar button { background: none; border: 1px solid var(--border); color: var(--muted); padding: 6px 16px; border-radius: 6px 6px 0 0; cursor: pointer; font: inherit; font-size: 12px; }
+  .tab-bar button.active { background: var(--card); color: var(--primary); border-bottom-color: var(--card); }
+  .danger { color: var(--red); }
+  .muted { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <h1>🐉 KNK SUITE v2</h1>
+    <nav class="nav">
+      <button data-view="dashboard" class="active">📊 Dashboard</button>
+      <button data-view="opplan">📋 OPPLAN</button>
+      <button data-view="pipeline">🚀 Pipeline</button>
+      <button data-view="gates">✅ Compuertas</button>
+      <button data-view="reportes">📝 Reportes</button>
+      <button data-view="chat">💬 Chat LLM</button>
+    </nav>
+    <div class="status">
+      <span class="dot" id="llm-dot"></span><span id="llm-status">LLM: ...</span><br>
+      <span style="font-size:10px;" id="session-info"></span>
+    </div>
+  </aside>
+
+  <main class="main" id="main-content"></main>
+</div>
+
+<script>
+// ============================================================================
+// KnkSuite v2 — Frontend SPA
+// ============================================================================
+
+const API = '/api';
+let currentView = 'dashboard';
+let session = {};
+
+async function api(url, opts = {}) {
+  const r = await fetch(API + url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  return r.json();
+}
+
+async function loadStatus() {
+  const s = await api('/status');
+  document.getElementById('llm-dot').className = 'dot ' + (s.ollama?.up ? 'on' : 'off');
+  document.getElementById('llm-status').textContent = 'LLM: ' + (s.ollama?.up ? s.ollama.model || 'ON' : 'OFF');
+  document.getElementById('session-info').textContent = s.session?.target || 'Sin objetivo';
+  return s;
+}
+
+// ============ VIEWS ============
+
+async function renderDashboard() {
+  const s = await api('/session');
+  const phases = s.phases || {};
+  const pipelinePhases = ['plan','recon','scan','fuzz','exploit','reporte','verificar'];
+
+  let html = '<h2>📊 Dashboard</h2>';
+
+  // Quick setup
+  html += '<div class="card" style="margin-bottom:16px">';
+  html += '<h3>⚡ Setup rápido</h3>';
+  html += `<input id="quick-target" placeholder="URL del programa (ej: example.com)" value="${s.target || ''}">`;
+  html += `<input id="quick-scope" placeholder="Scope (ej: *.example.com, api.example.com)" value="${(s.scope||[]).join(', ')}">`;
+  html += `<input id="quick-ua" placeholder="User-Agent permitido (según política del programa)">`;
+  html += `<input id="quick-program" placeholder="URL de la política/scope del programa">`;
+  html += `<input id="quick-ratelimit" placeholder="Rate limit (ms entre requests, default: 500)" value="500">`;
+  html += '<button class="btn btn-sm" onclick="quickSetup()">Fijar objetivo</button>';
+  html += '</div>';
+
+  // OPPLAN status
+  html += '<div class="grid">';
+  html += '<div class="card"><h3>📋 OPPLAN</h3>';
+  if (s.opplan) {
+    html += `<div class="kv"><span class="k">Nombre</span><span class="v">${s.opplan.nombre}</span></div>`;
+    html += `<div class="kv"><span class="k">Estado</span><span class="v"><span class="badge ${s.opplan.status==='aprobado'?'badge-ok':'badge-warn'}">${s.opplan.status}</span></span></div>`;
+    html += `<div class="kv"><span class="k">Scope</span><span class="v">${(s.opplan.scope||[]).join(', ')}</span></div>`;
+  } else {
+    html += '<span class="muted">Sin OPPLAN — créalo en la pestaña OPPLAN</span>';
+  }
+  html += '</div>';
+
+  // Session info
+  html += '<div class="card"><h3>🗂️ Sesión</h3>';
+  html += `<div class="kv"><span class="k">Objetivo</span><span class="v">${s.target || '—'}</span></div>`;
+  html += `<div class="kv"><span class="k">Hallazgos</span><span class="v">${s.findings.length}</span></div>`;
+  html += `<div class="kv"><span class="k">Notas</span><span class="v">${s.notes.length}</span></div>`;
+  html += '</div>';
+  html += '</div>';
+
+  // Pipeline progress
+  html += '<h2 style="margin-top:8px">🚀 Pipeline</h2><div class="card">';
+  for (const p of pipelinePhases) {
+    const done = phases[p]?.done;
+    html += `<div class="pipeline-phase">`;
+    html += `<div class="phase-num ${done ? 'done' : 'pending'}">${done ? '✓' : pipelinePhases.indexOf(p)+1}</div>`;
+    html += `<div style="flex:1"><strong>${p.toUpperCase()}</strong> ${done ? '<span class="badge badge-ok">completado</span>' : '<span class="muted">pendiente</span>'}</div>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+
+  // Findings
+  html += '<h2 style="margin-top:8px">🐞 Hallazgos recientes</h2>';
+  if (s.findings.length) {
+    html += '<div class="card">';
+    s.findings.slice().reverse().slice(0, 10).forEach(f => {
+      html += `<div class="finding"><span class="f-type">[${f.type}]</span><span class="f-sum">${f.summary}</span><span class="f-sev"><span class="badge ${f.severity==='critical'||f.severity==='high'?'badge-err':f.severity==='medium'?'badge-warn':'badge-ok'}">${f.severity||'info'}</span></span></div>`;
+    });
+    html += '</div>';
+  } else {
+    html += '<span class="muted">Sin hallazgos todavía.</span>';
+  }
+
+  return html;
+}
+
+async function renderOpplan() {
+  const s = await api('/session');
+  let html = '<h2>📋 OPPLAN</h2>';
+
+  html += '<div class="card"><h3>Crear / Editar OPPLAN</h3>';
+  html += `<input id="op-nombre" placeholder="Nombre de la operación" value="${s.opplan?.nombre || ''}">`;
+  html += `<input id="op-objetivo" placeholder="Objetivo (ej: encontrar IDOR en /api/v1/users)" value="${s.opplan?.objetivo || ''}">`;
+  html += `<input id="op-scope" placeholder="Scope (separado por comas)" value="${(s.opplan?.scope||[]).join(', ')}">`;
+  html += `<input id="op-notocar" placeholder="NO TOCAR (separado por comas)" value="${(s.opplan?.noTocar||[]).join(', ')}">`;
+  html += `<input id="op-ratelimit" placeholder="Rate limit" value="${s.opplan?.rateLimit || '1 req / 2s'}">`;
+  html += `<input id="op-ventana" placeholder="Ventana horaria" value="${s.opplan?.ventana || '09:00–18:00 CET'}">`;
+  html += `<label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer;font-size:13px">`;
+  html += `<input type="checkbox" id="op-autorizado" ${s.opplan?.autorizado ? 'checked' : ''}> Tengo autorización escrita (RoE/scope del programa)`;
+  html += `</label>`;
+  html += '<button class="btn" onclick="saveOpplan()" style="margin-right:8px">💾 Guardar OPPLAN</button>';
+  html += '<button class="btn btn-outline" onclick="approveOpplan()">✅ Aprobar OPPLAN</button>';
+  html += '</div>';
+
+  if (s.opplan) {
+    html += '<div class="card" style="margin-top:16px"><h3>Estado actual</h3>';
+    html += `<pre class="pre">${JSON.stringify(s.opplan, null, 2)}</pre>`;
+    html += '</div>';
+  }
+  return html;
+}
+
+async function renderPipeline() {
+  let html = '<h2>🚀 Pipeline</h2>';
+
+  const phases = [
+    { id: 'recon', name: '🔍 RECON', desc: 'Subdominios, wayback, tecnologías' },
+    { id: 'scan', name: '🛡️ SCAN', desc: 'Headers seguridad, CORS, CVEs' },
+    { id: 'fuzz', name: '🚀 FUZZ', desc: 'Directorios y archivos ocultos' },
+  ];
+
+  // Pipeline completo
+  html += '<div class="card" style="margin-bottom:16px"><h3>▶ Pipeline rápido (recon + scan + fuzz)</h3>';
+  html += '<button class="btn" onclick="runFullPipeline()">Ejecutar pipeline completo</button>';
+  html += '<span class="muted" style="margin-left:10px" id="pipeline-status"></span>';
+  html += '</div>';
+
+  // Fases individuales
+  html += '<div class="grid">';
+  for (const p of phases) {
+    html += '<div class="card"><h3>' + p.name + '</h3>';
+    html += `<span class="muted">${p.desc}</span><br><br>`;
+    html += `<button class="btn btn-sm" onclick="runPhase('${p.id}')">Ejecutar</button>`;
+    html += `<div id="out-${p.id}" style="margin-top:10px"></div>`;
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Exploit gates
+  html += '<div class="card"><h3>✅ Compuertas (EXPLOIT)</h3>';
+  html += '<span class="muted">Valida candidatos manualmente con las compuertas en la pestaña dedicada.</span>';
+  html += '</div>';
+
+  // Reporte
+  html += '<div class="card" style="margin-top:16px"><h3>📝 Reporte (con evidencia)</h3>';
+  html += `<input id="rep-title" placeholder="Título del reporte (ej: CORS Misconfiguration en api.target.com)">`;
+  html += `<input id="rep-program" placeholder="Nombre del programa">`;
+  html += `<input id="rep-asset" placeholder="Asset/endpoint vulnerable">`;
+  html += `<input id="rep-type" placeholder="Tipo de bug (CORS, IDOR, XSS, SSRF...)">`;
+  html += `<input id="rep-cwe" placeholder="CWE (ej: CWE-942)">`;
+  html += `<input id="rep-cvss" placeholder="CVSS (ej: 6.5)">`;
+  html += `<select id="rep-sev" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font:inherit;font-size:13px;width:100%;margin-bottom:10px"><option>low</option><option selected>medium</option><option>high</option><option>critical</option></select>`;
+  html += `<input id="rep-impact" placeholder="Impacto (una frase concreta)">`;
+  html += `<input id="rep-remediation" placeholder="Remediation sugerida">`;
+  html += `<textarea id="rep-steps" placeholder="Pasos de reproducción (separados por | )" rows="3"></textarea>`;
+  html += `<input id="rep-sspath" placeholder="Ruta de los screenshots">`;
+  html += `<input id="rep-rrpath" placeholder="Ruta del request/response">`;
+  html += '<button class="btn btn-sm" onclick="generateReport()" style="margin-right:8px">Generar reporte</button>';
+  html += '<button class="btn btn-sm btn-outline" onclick="verifyReport()">Verificar reporte</button>';
+  html += '<div id="out-reporte" style="margin-top:10px"></div>';
+  html += '</div>';
+
+  return html;
+}
+
+async function renderGates() {
+  let html = '<h2>✅ Compuertas de validación</h2>';
+  html += '<div class="grid">';
+
+  const gates = [
+    {
+      id: 'cors', title: 'CORS',
+      fields: [
+        { id: 'originReflected', label: '¿Origin reflejado con credenciales?' },
+        { id: 'endpointStatus', label: 'Status del endpoint', type: 'number', def: 200 },
+        { id: 'authMode', label: 'Auth (cookie/bearer/none)', def: 'cookie' },
+        { id: 'dataSensitive', label: '¿Dato sensible/privado?' },
+        { id: 'crossOriginRead', label: '¿Lectura cross-origin real?' },
+        { id: 'exfil', label: '¿Exfiltración demostrada?' },
+      ]
+    },
+    {
+      id: 'idor', title: 'IDOR',
+      fields: [
+        { id: 'inScope', label: '¿En scope exacto?' },
+        { id: 'ownResourceB', label: '¿Recurso pertenece a cuenta B?' },
+        { id: 'baselineB200', label: '¿Baseline B 200?' },
+        { id: 'readWithA', label: 'Status cuenta A al leer B', type: 'number', def: 403 },
+        { id: 'dataPrivate', label: '¿A leyó datos PRIVADOS de B?' },
+        { id: 'reproducible', label: '¿Reproducible 2ª vez?' },
+        { id: 'programEligible', label: '¿Elegible según política?' },
+      ]
+    },
+    {
+      id: 'ssrf', title: 'SSRF',
+      fields: [
+        { id: 'urlControlled', label: '¿Controla la URL destino?' },
+        { id: 'serverFetches', label: '¿Callback recibido?' },
+        { id: 'internalTarget', label: '¿Destino interno/privado?' },
+        { id: 'impactShown', label: '¿Impacto demostrado?' },
+        { id: 'reproducible', label: '¿Reproducible?' },
+        { id: 'inScope', label: '¿En scope?' },
+      ]
+    },
+    {
+      id: 'xss', title: 'XSS',
+      fields: [
+        { id: 'reflected', label: '¿Payload reflejado/almacenado?' },
+        { id: 'execContext', label: 'Contexto (html/js/attr/text)', def: 'html' },
+        { id: 'executed', label: '¿Ejecución demostrada?' },
+        { id: 'cspBlocks', label: '¿CSP bloquea?' },
+        { id: 'impactReal', label: '¿Impacto real?' },
+        { id: 'reproducible', label: '¿Reproducible?' },
+        { id: 'inScope', label: '¿En scope?' },
+      ]
+    },
+  ];
+
+  for (const g of gates) {
+    html += '<div class="card"><h3>' + g.title + '</h3>';
+    for (const f of g.fields) {
+      if (f.type === 'number') {
+        html += `<div class="kv"><span class="k">${f.label}</span><span class="v"><input id="gate-${g.id}-${f.id}" value="${f.def||''}" style="width:80px;display:inline;margin:0;text-align:right"></span></div>`;
+      } else {
+        html += `<div class="kv"><span class="k">${f.label}</span><span class="v"><select id="gate-${g.id}-${f.id}" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px"><option value="">—</option><option value="true">✅ Sí</option><option value="false">⛔ No</option></select></span></div>`;
+      }
+    }
+    html += `<button class="btn btn-sm" onclick="validateGate('${g.id}')" style="margin-top:8px">Validar ${g.title}</button>`;
+    html += `<div id="gate-out-${g.id}" style="margin-top:8px;font-size:12px"></div>`;
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+async function renderReportes() {
+  const reportes = await api('/reportes');
+  let html = '<h2>📝 Reportes</h2>';
+  if (reportes.length) {
+    html += '<div class="grid">';
+    reportes.slice().reverse().forEach(r => {
+      html += `<div class="card"><h3>${r.titulo}</h3>`;
+      html += `<div class="kv"><span class="k">Asset</span><span class="v">${r.asset}</span></div>`;
+      html += `<div class="kv"><span class="k">Severidad</span><span class="v"><span class="badge badge-warn">${r.severidad} (${r.cvss})</span></span></div>`;
+      html += `<div class="kv"><span class="k">Reproducido</span><span class="v">${r.reproducible}×</span></div>`;
+      html += `<div class="kv"><span class="k">Fecha</span><span class="v">${(r.fecha||'').slice(0,10)}</span></div>`;
+      html += '</div>';
+    });
+    html += '</div>';
+  } else {
+    html += '<span class="muted">Sin reportes.</span>';
+  }
+  return html;
+}
+
+async function renderChat() {
+  let html = '<h2>💬 Chat con el LLM</h2>';
+  html += '<div class="card">';
+  html += '<div id="chat-history" style="max-height:400px;overflow:auto;margin-bottom:12px"></div>';
+  html += '<textarea id="chat-input" placeholder="Pregunta al LLM..." rows="2" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>';
+  html += '<button class="btn btn-sm" onclick="sendChat()">Enviar</button>';
+  html += '</div>';
+  return html;
+}
+
+// ============ ACTIONS ============
+
+window.quickSetup = async function() {
+  const target = document.getElementById('quick-target').value.trim();
+  const scope = document.getElementById('quick-scope').value.trim();
+  const userAgent = document.getElementById('quick-ua').value.trim();
+  const programUrl = document.getElementById('quick-program').value.trim();
+  const rateLimitMs = parseInt(document.getElementById('quick-ratelimit').value) || 500;
+  if (!target) return toast('Define el objetivo');
+  if (!scope) return toast('Define el scope — sin scope documentado no se puede auditar');
+  await api('/target', { method: 'POST', body: JSON.stringify({ target, scope, userAgent, programUrl, rateLimitMs }) });
+  toast('✅ Objetivo fijado | Scope: ' + scope + ' | UA personalizado: ' + (userAgent ? 'SI' : 'default'));
+  await navigateTo('dashboard');
+};
+
+window.saveOpplan = async function() {
+  const body = {
+    nombre: document.getElementById('op-nombre').value.trim(),
+    objetivo: document.getElementById('op-objetivo').value.trim(),
+    scope: document.getElementById('op-scope').value.split(',').map(s=>s.trim()).filter(Boolean),
+    noTocar: document.getElementById('op-notocar').value.split(',').map(s=>s.trim()).filter(Boolean),
+    rateLimit: document.getElementById('op-ratelimit').value.trim(),
+    ventana: document.getElementById('op-ventana').value.trim(),
+    autorizado: document.getElementById('op-autorizado').checked,
+  };
+  const r = await api('/opplan', { method: 'POST', body: JSON.stringify(body) });
+  toast(r.ok ? '✅ OPPLAN guardado' : '⛔ ' + (r.pendientes||['error']).join(', '));
+};
+
+window.approveOpplan = async function() {
+  const r = await api('/opplan/approve', { method: 'POST' });
+  toast(r.ok ? '✅ OPPLAN APROBADO' : '⛔ Error');
+  await navigateTo('dashboard');
+};
+
+window.runPhase = async function(phaseId) {
+  document.getElementById('out-' + phaseId).innerHTML = '<span class="muted">Ejecutando...</span>';
+  const r = await api('/pipeline/run', { method: 'POST', body: JSON.stringify({ phase: phaseId }) });
+  document.getElementById('out-' + phaseId).innerHTML = '<pre class="pre">' + JSON.stringify(r, null, 2) + '</pre>';
+  if (r.ok) toast('✅ ' + phaseId + ' completado');
+  else toast('⛔ ' + (r.error || 'Error'));
+  loadStatus();
+};
+
+window.runFullPipeline = async function() {
+  document.getElementById('pipeline-status').textContent = 'Ejecutando...';
+  const r = await api('/pipeline/full', { method: 'POST', body: JSON.stringify({}) });
+  document.getElementById('pipeline-status').textContent = r.completed + '/' + r.total + ' fases completadas';
+  if (r.completed === r.total) toast('✅ Pipeline completo');
+  else toast('⚠️ Pipeline parcial');
+  loadStatus();
+  await navigateTo('dashboard');
+};
+
+window.validateGate = async function(type) {
+  const input = {};
+  document.querySelectorAll(`[id^="gate-${type}-"]`).forEach(el => {
+    const key = el.id.replace(`gate-${type}-`, '');
+    const val = el.value;
+    if (val === 'true') input[key] = true;
+    else if (val === 'false') input[key] = false;
+    else if (!isNaN(val) && val !== '') input[key] = parseInt(val);
+    else if (val) input[key] = val;
+  });
+  const r = await api('/gates/validate', { method: 'POST', body: JSON.stringify({ type, ...input }) });
+  const out = document.getElementById('gate-out-' + type);
+  out.innerHTML = '<div style="margin-top:8px"><strong>' + r.summary + '</strong><br>' +
+    r.results.map(g => `${g.ok?'✅':'⛔'} ${g.label}`).join('<br>') + '</div>';
+  if (r.sendable) toast('✅ Reportable!');
+};
+
+window.generateReport = async function() {
+  const config = await api('/config');
+  const stepsRaw = document.getElementById('rep-steps').value.trim();
+  const steps = stepsRaw ? stepsRaw.split('|').map(s => s.trim()).filter(Boolean) : ['Paso 1 - definir', 'Paso 2 - definir', 'Paso 3 - definir'];
+  const body = {
+    title: document.getElementById('rep-title').value.trim(),
+    program: document.getElementById('rep-program').value.trim() || config.target || '—',
+    asset: document.getElementById('rep-asset').value.trim(),
+    bugType: document.getElementById('rep-type').value.trim(),
+    cwe: document.getElementById('rep-cwe').value.trim() || '—',
+    cvss: document.getElementById('rep-cvss').value.trim() || '—',
+    severity: document.getElementById('rep-sev').value,
+    impact: document.getElementById('rep-impact').value.trim(),
+    remediation: document.getElementById('rep-remediation').value.trim() || '—',
+    steps: steps,
+    evidence: ['Screenshot del exploit', 'Screenshot del impacto', 'Request/Response reproducible'],
+    evidenceScreenshots: !!document.getElementById('rep-sspath').value.trim(),
+    evidenceRequestResponse: !!document.getElementById('rep-rrpath').value.trim(),
+    pocMinimal: steps.length >= 3, reproducibleCount: 2,
+    inScope: true, noDuplicate: true, notDisqualifier: true, exploitable: true,
+    noPII: true, severityHonest: true,
+    screenshotsPath: document.getElementById('rep-sspath').value.trim() || '❌ NO ADJUNTOS',
+    requestResponsePath: document.getElementById('rep-rrpath').value.trim() || '❌ NO ADJUNTO',
+    userAgent: config.userAgent || '',
+    programUrl: config.programUrl || '',
+    scopeDocumentado: (config.scope || []).join(', '),
+  };
+  const r = await api('/reporte/generate', { method: 'POST', body: JSON.stringify(body) });
+  document.getElementById('out-reporte').innerHTML = r.ok
+    ? '<span class="badge badge-ok">✅ Reporte generado: ' + r.file + '</span><br><pre class="pre" style="max-height:200px">' + (r.json?.titulo||'') + ' | ' + (r.json?.severidad||'') + ' | Reproducido: ' + (r.json?.reproducible||0) + 'x</pre>'
+    : '<pre class="pre danger">' + r.blockers + '</pre>';
+};
+
+window.verifyReport = async function() {
+  const r = await api('/reporte/verify', { method: 'POST' });
+  document.getElementById('out-reporte').innerHTML = '<pre class="pre">' +
+    `VEREDICTO: ${r.verdict} (score: ${r.score}/100)\n` +
+    (r.problems||[]).map(p => '⛔ ' + p).join('\n') + '\n' +
+    (r.warnings||[]).map(w => '⚠️ ' + w).join('\n') +
+    '</pre>';
+};
+
+window.sendChat = async function() {
+  const prompt = document.getElementById('chat-input').value.trim();
+  if (!prompt) return;
+  const hist = document.getElementById('chat-history');
+  hist.innerHTML += '<div class="muted" style="margin-bottom:6px">tú> ' + prompt + '</div>';
+  document.getElementById('chat-input').value = '';
+  const r = await api('/llm/chat', { method: 'POST', body: JSON.stringify({ prompt }) });
+  hist.innerHTML += '<div style="margin-bottom:10px;color:var(--primary)">🤖 ' + (r.text || 'Sin respuesta') + '</div>';
+  hist.scrollTop = hist.scrollHeight;
+};
+
+// ============ NAVIGATION ============
+
+async function navigateTo(view) {
+  currentView = view;
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-view="${view}"]`)?.classList.add('active');
+
+  let html = '';
+  switch (view) {
+    case 'dashboard': html = await renderDashboard(); break;
+    case 'opplan': html = await renderOpplan(); break;
+    case 'pipeline': html = await renderPipeline(); break;
+    case 'gates': html = await renderGates(); break;
+    case 'reportes': html = await renderReportes(); break;
+    case 'chat': html = await renderChat(); break;
+  }
+  document.getElementById('main-content').innerHTML = html;
+}
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// Init
+document.querySelectorAll('.nav button').forEach(b => {
+  b.addEventListener('click', () => navigateTo(b.dataset.view));
+});
+
+loadStatus();
+navigateTo('dashboard');
+</script>
+</body>
+</html>
