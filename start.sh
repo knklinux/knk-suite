@@ -15,6 +15,13 @@ echo "  🐉 KNK SUITE v2 — Bug Bounty Pipeline"
 echo "══════════════════════════════════════════════════════"
 echo ""
 
+# ── 0. Limpiar proceso anterior ──────────────────────
+if fuser 8086/tcp &>/dev/null 2>&1; then
+  echo "⚠️ Puerto 8086 ocupado — matando proceso anterior..."
+  fuser -k 8086/tcp 2>/dev/null || true
+  sleep 1
+fi
+
 # ── 1. Ollama ────────────────────────────────────────
 if curl -s -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
   echo "✅ Ollama ya corriendo"
