@@ -239,6 +239,31 @@ async function renderPipeline() {
   }
   html += '</div>';
 
+  // Terminal Kali embebida
+  html += '<div class="card" style="margin-top:16px"><h3>🐳 Terminal Kali (Docker)</h3>';
+  html += '<p class="muted" style="margin-bottom:8px">Ejecuta comandos manuales en Kali. La suite pausa el pipeline en fuzz/exploit para que hagas esto aquí.</p>';
+  html += '<div style="display:flex;gap:6px;margin-bottom:8px">';
+  html += '<input id="kali-cmd" placeholder="Escribe un comando (ej: nmap -sV example.com)" style="flex:1;margin:0;font-family:monospace">';
+  html += '<button class="btn btn-sm" onclick="runKaliCmd()" id="btn-kali-run">▶ Ejecutar</button>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">';
+  const cmds = [
+    { label: 'nmap -sV', cmd: 'nmap -sV TARGET' },
+    { label: 'ffuf fuzz', cmd: 'ffuf -u https://TARGET/FUZZ -w /usr/share/wordlists/dirb/common.txt -mc 200,301,302,403 -t 1' },
+    { label: 'nuclei scan', cmd: 'nuclei -u https://TARGET -t http/misconfiguration -silent -timeout 5' },
+    { label: 'subfinder', cmd: 'subfinder -d TARGET -silent' },
+    { label: 'sqlmap', cmd: "sqlmap -u 'https://TARGET/PATH' --batch --level=1" },
+    { label: 'whatweb', cmd: 'whatweb https://TARGET' },
+    { label: 'dirb', cmd: 'dirb https://TARGET /usr/share/wordlists/dirb/common.txt' },
+    { label: 'curl test', cmd: 'curl -sI -H "Origin: https://evil.example" https://TARGET' },
+  ];
+  cmds.forEach(c => {
+    html += `<button class="btn btn-sm" style="font-size:10px;padding:3px 8px" onclick="document.getElementById('kali-cmd').value='${c.cmd.replace(/'/g, "\\'")}'">${c.label}</button>`;
+  });
+  html += '</div>';
+  html += '<div id="kali-output" style="background:#000;color:#0f0;padding:12px;border-radius:6px;font-family:monospace;font-size:11px;max-height:400px;overflow:auto;white-space:pre-wrap">$ Esperando comandos...</div>';
+  html += '</div>';
+
   // Resultados
   html += '<div id="pipeline-results" style="margin-top:16px"></div>';
 
@@ -482,6 +507,56 @@ window.runPhase = async function(phaseId) {
   return await api('/pipeline/run', { method: 'POST', body: JSON.stringify({ phase: phaseId }) });
 };
 
+window.continueManualPipeline = async function(phases, startIdx, btn, emoji) {
+  btn.disabled = true;
+  btn.textContent = '⏳ Ejecutando...';
+  for (let i = startIdx; i < phases.length; i++) {
+    const phaseId = phases[i];
+    const numEl = document.getElementById('pp-num-' + phaseId);
+    const outEl = document.getElementById('pp-out-' + phaseId);
+    if (numEl) numEl.className = 'phase-num active';
+    if (outEl) outEl.textContent = 'Ejecutando...';
+    document.getElementById('pipeline-status').textContent = emoji[phaseId] + ' ' + phaseId.toUpperCase() + '...';
+    const r = await runPhase(phaseId);
+    if (numEl) numEl.className = r.ok ? 'phase-num done' : 'phase-num pending';
+    if (numEl && r.ok) numEl.textContent = '✓';
+    if (outEl && r.ok) {
+      const o = r.output || {};
+      const summary = phaseId === 'reporte' ? (o.draft ? 'borrador generado ⚠️' : 'generado')
+        : phaseId === 'verificar' ? (o.verdict || 'completado') + ' (' + (o.score || 0) + '/100)'
+        : 'completado';
+      outEl.textContent = summary;
+    } else if (outEl) {
+      outEl.textContent = r.error || 'pendiente';
+    }
+  }
+  document.getElementById('pipeline-status').textContent = '✅ Pipeline completo';
+  btn.textContent = '🚀 Ejecutar pipeline completo';
+  btn.disabled = false;
+  btn.onclick = window.runFullPipeline;
+  toast('✅ Pipeline completo');
+  // Show results
+  const s = await api('/session');
+  const resultsDiv = document.getElementById('pipeline-results');
+  const rep = s.artifacts?.ultimo_reporte || {};
+  const verPhase = s.phases?.verificar?.result || {};
+  let html = '<div class="card"><h3>📊 Resumen</h3>';
+  html += `<div class="kv"><span class="k">Objetivo</span><span class="v">${s.target || '—'}</span></div>`;
+  html += `<div class="kv"><span class="k">Hallazgos</span><span class="v">${s.findings.length}</span></div>`;
+  html += `<div class="kv"><span class="k">Programa</span><span class="v">${s.artifacts?.programName || '—'}</span></div>`;
+  html += `<div class="kv"><span class="k">OPPLAN</span><span class="v"><span class="badge badge-ok">${s.opplan?.status || '—'}</span></span></div>`;
+  html += '</div>';
+  if (s.findings.length) {
+    html += '<div class="card" style="margin-top:12px"><h3>🐞 Hallazgos</h3>';
+    s.findings.forEach(f => {
+      const sc = f.severity==='critical'||f.severity==='high'?'badge-err':f.severity==='medium'?'badge-warn':'badge-ok';
+      html += `<div class="finding"><span class="f-type">[${f.type}]</span><span class="f-sum">${f.summary}</span><span class="f-sev"><span class="badge ${sc}">${f.severity||'info'}</span></span></div>`;
+    });
+    html += '</div>';
+  }
+  resultsDiv.innerHTML = html;
+};
+
 window.runFullPipeline = async function() {
   const btn = document.getElementById('btn-full-pipeline');
   btn.disabled = true;
@@ -499,6 +574,44 @@ window.runFullPipeline = async function() {
     if (outEl) outEl.textContent = 'Ejecutando...';
     document.getElementById('pipeline-status').textContent = emoji[phaseId] + ' ' + phaseId.toUpperCase() + '...';
 
+    // FASES MANUALES: pausar y pedir al usuario que lo haga en la terminal
+    if (phaseId === 'fuzz') {
+      if (numEl) numEl.className = 'phase-num pending';
+      if (outEl) outEl.textContent = '⏸ PAUSADO — usa la terminal Kali de abajo';
+      document.getElementById('pipeline-status').innerHTML = '🚀 FUZZ: <span style="color:var(--yellow)">MANUAL — ejecuta desde la terminal Kali ↓</span>';
+      // Pre-rellenar comando fuzz
+      const tgt = document.querySelector('#pp-out-recon')?.textContent || '';
+      const fuzzCmd = 'ffuf -u https://' + (session?.target || 'TARGET') + '/FUZZ -w /usr/share/wordlists/dirb/common.txt -mc 200,301,302,403 -t 1';
+      const kaliInput = document.getElementById('kali-cmd');
+      if (kaliInput) kaliInput.value = fuzzCmd;
+      toast('⏸ Fuzz manual — ejecuta el comando en la terminal Kali y luego continúa');
+      btn.disabled = false;
+      btn.textContent = '▶ Continuar después de fuzz';
+      btn.onclick = async function() {
+        btn.onclick = window.runFullPipeline;
+        // Marcar fuzz como manual
+        await runPhase('fuzz', { manual: true });
+        // Continuar con exploit
+        continueManualPipeline(phases, phases.indexOf(phaseId) + 1, btn, emoji);
+      };
+      return;
+    }
+
+    if (phaseId === 'exploit') {
+      if (numEl) numEl.className = 'phase-num pending';
+      if (outEl) outEl.textContent = '⏸ PAUSADO — prueba la explotación manualmente';
+      document.getElementById('pipeline-status').innerHTML = '✅ EXPLOIT: <span style="color:var(--yellow)">MANUAL — toma screenshots y prueba PoC ↓</span>';
+      toast('⏸ Explotación manual — prueba el exploit, toma screenshots, pega curl');
+      btn.disabled = false;
+      btn.textContent = '▶ Continuar después de exploit';
+      btn.onclick = async function() {
+        btn.onclick = window.runFullPipeline;
+        await runPhase('exploit', { manual: true });
+        continueManualPipeline(phases, phases.indexOf(phaseId) + 1, btn, emoji);
+      };
+      return;
+    }
+
     const r = await runPhase(phaseId);
     if (numEl) numEl.className = r.ok ? 'phase-num done' : 'phase-num pending';
     if (numEl && r.ok) numEl.textContent = '✓';
@@ -507,8 +620,6 @@ window.runFullPipeline = async function() {
       const summary = phaseId === 'plan' ? (o.draft ? 'borrador' : 'OPPLAN aprobado')
         : phaseId === 'recon' ? (o.totalSubs || 0) + ' subdominios, ' + (o.totalUrls || 0) + ' URLs, tech: ' + (o.tecnologias||[]).slice(0,3).join(', ')
         : phaseId === 'scan' ? (o.headersAusentes?.length || 0) + ' headers ausentes, CORS: ' + (o.cors?.suspicious ? 'sospechoso' : 'ok')
-        : phaseId === 'fuzz' ? (o.mode === 'stealth' ? 'stealth (15 paths)' : (o.findings?.length || 0) + ' rutas')
-        : phaseId === 'exploit' ? 'usa compuertas para validar'
         : phaseId === 'reporte' ? (o.draft ? 'borrador generado ⚠️' : 'generado')
         : phaseId === 'verificar' ? (o.verdict || 'completado') + ' (' + (o.score || 0) + '/100)'
         : 'completado';
@@ -610,6 +721,24 @@ window.runFullPipeline = async function() {
   // Setear severidad del reporte
   const sevSel = document.getElementById('rep-sev');
   if (sevSel && rep.severidad) sevSel.value = rep.severidad;
+};
+
+window.runKaliCmd = async function() {
+  const input = document.getElementById('kali-cmd');
+  const output = document.getElementById('kali-output');
+  const btn = document.getElementById('btn-kali-run');
+  if (!input || !output) return;
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  btn.disabled = true;
+  btn.textContent = '⏳...';
+  output.textContent += '\n$ ' + cmd + '\n';
+  output.scrollTop = output.scrollHeight;
+  const r = await api('/docker/exec', { method: 'POST', body: JSON.stringify({ cmd, timeoutMs: 30000 }) });
+  output.textContent += (r.output || r.error || '(sin output)') + '\n';
+  output.scrollTop = output.scrollHeight;
+  btn.disabled = false;
+  btn.textContent = '▶ Ejecutar';
 };
 
 window.uploadEvidence = async function(inputEl, type) {

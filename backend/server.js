@@ -359,6 +359,27 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =========================================================================
+  // API: Ejecutar comandos en Docker Kali (terminal embebida)
+  // =========================================================================
+  if (u.pathname === '/api/docker/exec' && req.method === 'POST') {
+    const body = await readJSON(req);
+    const cmd = body.cmd;
+    if (!cmd) return sendJSON(res, 400, { ok: false, error: 'cmd requerido' });
+    // Bloquear comandos destructivos
+    const blocked = /^(rm\s+-rf|mkfs|dd\s+if=|shutdown|reboot|init\s+0)/i;
+    if (blocked.test(cmd)) return sendJSON(res, 403, { ok: false, error: 'Comando bloqueado por seguridad' });
+    const dockerMod = require('./lib/docker');
+    if (!dockerMod.ensureRunning()) return sendJSON(res, 500, { ok: false, error: 'Docker Kali no está corriendo' });
+    const timeout = Math.min(body.timeoutMs || 30000, 60000);
+    const r = dockerMod.exec('bash', `-c "${cmd.replace(/"/g, '\\"')}"`, { timeoutMs: timeout });
+    // Log del comando en la sesión
+    const s = sessionMod.load(SESSION_FILE);
+    sessionMod.addNote(s, `[terminal] $ ${cmd}`);
+    sessionMod.save(SESSION_FILE, s);
+    return sendJSON(res, 200, { ok: r.ok, output: r.output.slice(0, 50000), error: r.ok ? null : r.output.slice(0, 500) });
+  }
+
+  // =========================================================================
   // API: Herramientas / Docker Kali
   // =========================================================================
   if (u.pathname === '/api/tools') {
