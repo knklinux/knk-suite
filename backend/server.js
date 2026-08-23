@@ -323,6 +323,19 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, 200, { ok: true, file, json: rep.json });
   }
 
+  // Guardar borrador del reporte (sin validación estricta)
+  if (u.pathname === '/api/reporte/save-draft' && req.method === 'POST') {
+    const body = await readJSON(req);
+    const s = sessionMod.load(SESSION_FILE);
+    // Merge con el reporte existente si hay
+    const existing = s.artifacts?.ultimo_reporte || {};
+    const draft = { ...existing, ...body, estado: 'borrador', fecha: new Date().toISOString() };
+    const file = reportMod.writeReport(WORKSPACE, draft);
+    sessionMod.setArtifact(s, 'ultimo_reporte', draft);
+    sessionMod.save(SESSION_FILE, s);
+    return sendJSON(res, 200, { ok: true, file, json: draft });
+  }
+
   if (u.pathname === '/api/reporte/verify' && req.method === 'POST') {
     const s = sessionMod.load(SESSION_FILE);
     const last = s.artifacts.ultimo_reporte;

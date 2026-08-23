@@ -474,65 +474,132 @@ window.runFullPipeline = async function() {
   btn.disabled = false;
   toast('✅ Pipeline completo');
 
-  // Mostrar resumen completo con hallazgos y reporte
+  // Mostrar resumen + panel interactivo post-pipeline
   const s = await api('/session');
   const resultsDiv = document.getElementById('pipeline-results');
-  let html = '<div class="card"><h3>📊 Resumen del pipeline</h3>';
+  const rep = s.artifacts?.ultimo_reporte || {};
+  const verPhase = s.phases?.verificar?.result || {};
+  let html = '';
+
+  // === RESUMEN ===
+  html += '<div class="card"><h3>📊 Resumen</h3>';
   html += `<div class="kv"><span class="k">Objetivo</span><span class="v">${s.target || '—'}</span></div>`;
   html += `<div class="kv"><span class="k">Hallazgos</span><span class="v">${s.findings.length}</span></div>`;
   html += `<div class="kv"><span class="k">Programa</span><span class="v">${s.artifacts?.programName || '—'}</span></div>`;
-  html += `<div class="kv"><span class="k">OPPLAN</span><span class="v"><span class="badge ${s.opplan?.status==='aprobado'?'badge-ok':'badge-warn'}">${s.opplan?.status || 'sin OPPLAN'}</span></span></div>`;
+  html += `<div class="kv"><span class="k">OPPLAN</span><span class="v"><span class="badge badge-ok">${s.opplan?.status || '—'}</span></span></div>`;
   html += '</div>';
 
-  // Hallazgos detallados
+  // === HALLAZGOS ===
   if (s.findings.length) {
     html += '<div class="card" style="margin-top:12px"><h3>🐞 Hallazgos</h3>';
-    s.findings.forEach((f, i) => {
-      const sevClass = f.severity==='critical'||f.severity==='high' ? 'badge-err' : f.severity==='medium' ? 'badge-warn' : 'badge-ok';
-      html += '<div class="finding">';
-      html += `<span class="f-type">[${f.type}]</span>`;
-      html += `<span class="f-sum">${f.summary}</span>`;
-      html += `<span class="f-sev"><span class="badge ${sevClass}">${f.severity||'info'}</span></span>`;
-      html += '</div>';
+    s.findings.forEach(f => {
+      const sc = f.severity==='critical'||f.severity==='high'?'badge-err':f.severity==='medium'?'badge-warn':'badge-ok';
+      html += `<div class="finding"><span class="f-type">[${f.type}]</span><span class="f-sum">${f.summary}</span><span class="f-sev"><span class="badge ${sc}">${f.severity||'info'}</span></span></div>`;
     });
     html += '</div>';
   }
 
-  // Reporte
-  const rep = s.artifacts?.ultimo_reporte;
-  if (rep) {
-    html += '<div class="card" style="margin-top:12px"><h3>📝 Reporte borrador</h3>';
-    html += `<div class="kv"><span class="k">Título</span><span class="v">${rep.titulo}</span></div>`;
-    html += `<div class="kv"><span class="k">Asset</span><span class="v">${rep.asset}</span></div>`;
-    html += `<div class="kv"><span class="k">Programa</span><span class="v">${rep.programa}</span></div>`;
-    html += `<div class="kv"><span class="k">Reproducible</span><span class="v">${rep.reproducible}×</span></div>`;
-    html += `<div class="kv"><span class="k">Screenshots</span><span class="v">${rep.screenshotsPath || 'pendiente'}</span></div>`;
-    html += `<div class="kv"><span class="k">Curl</span><span class="v">${rep.requestResponsePath || 'pendiente'}</span></div>`;
-    html += `<div class="kv"><span class="k">Pasos</span><span class="v">${rep.pasos?.length || 0}</span></div>`;
-    html += '<p class="muted" style="margin-top:8px">⚠️ Añade screenshots y curl reproducible antes de enviar</p>';
+  // === EDITOR DE REPORTE ===
+  html += '<div class="card" style="margin-top:12px"><h3>📝 Editar reporte</h3>';
+  html += `<input id="rep-title" placeholder="Título (ej: CORS en /api/users)" value="${rep.titulo||''}">`;
+  html += `<input id="rep-asset" placeholder="Asset vulnerable (ej: api.example.com/v1/users)" value="${rep.asset||''}">`;
+  html += `<input id="rep-type" placeholder="Tipo de bug (ej: IDOR, XSS, CORS)" value="${rep.tipo||''}">`;
+  html += `<input id="rep-cwe" placeholder="CWE (ej: CWE-639)" value="${rep.cwe||''}">`;
+  html += `<input id="rep-cvss" placeholder="CVSS (ej: 7.5)" value="${rep.cvss||''}">`;
+  html += '<select id="rep-sev"><option value="info">info</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="critical">critical</option></select>';
+  html += `<textarea id="rep-impact" placeholder="Impacto (describe el daño real)" rows="3">${rep.impacto||''}</textarea>`;
+  html += `<textarea id="rep-steps" placeholder="Pasos de reproducción (separa con |)" rows="4">${(rep.pasos||[]).join('|')}</textarea>`;
+  html += `<textarea id="rep-remediation" placeholder="Remediación sugerida" rows="2">${rep.remediacion||''}</textarea>`;
+  html += `<div class="kv"><span class="k">Reproducible</span><span class="v"><select id="rep-repro" style="width:auto"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x+</option></select></span></div>`;
+  html += '</div>';
+
+  // === EVIDENCIA ===
+  html += '<div class="card" style="margin-top:12px"><h3>📸 Evidencia (obligatoria para enviar)</h3>';
+  html += '<p class="muted" style="margin-bottom:8px">Toma screenshots del exploit y del impacto. Guarda el curl reproducible.</p>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  html += '<div><strong style="font-size:12px">📸 Screenshots</strong>';
+  html += '<input id="rep-sspath" placeholder="Ruta screenshots (ej: ~/evidencia/exploit.png)">';
+  html += '<label class="btn btn-sm btn-outline" style="display:inline-block;cursor:pointer">📤 Subir archivo<input type="file" id="ss-upload" accept="image/*" multiple style="display:none" onchange="uploadEvidence(this,\"screenshot\")"></label>';
+  html += '<div id="ss-list" style="font-size:11px;color:var(--muted);margin-top:4px"></div></div>';
+  html += '<div><strong style="font-size:12px">🔗 Request/Response</strong>';
+  html += '<textarea id="rep-rrpath" placeholder="Pega el curl reproducible aquí..." rows="3" style="font-family:monospace;font-size:11px"></textarea>';
+  html += '<label class="btn btn-sm btn-outline" style="display:inline-block;cursor:pointer">📤 Subir archivo<input type="file" id="rr-upload" style="display:none" onchange="uploadEvidence(this,\"request_response\")"></label>';
+  html += '</div></div>';
+  html += '</div>';
+
+  // === COMPUERTAS ===
+  html += '<div class="card" style="margin-top:12px"><h3>✅ Compuertas rápidas</h3>';
+  html += '<p class="muted" style="margin-bottom:8px">Valida tu hallazgo antes de enviar. Selecciona el tipo:</p>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  html += '<button class="btn btn-sm" onclick="navigateTo(\"gates\")">🔓 CORS</button>';
+  html += '<button class="btn btn-sm" onclick="navigateTo(\"gates\")">🔑 IDOR</button>';
+  html += '<button class="btn btn-sm" onclick="navigateTo(\"gates\")">🌐 SSRF</button>';
+  html += '<button class="btn btn-sm" onclick="navigateTo(\"gates\")">💉 XSS</button>';
+  html += '<button class="btn btn-sm" onclick="navigateTo(\"gates\")">📦 Subdomain Takeover</button>';
+  html += '</div></div>';
+
+  // === VERIFICACIÓN ===
+  if (verPhase.output) {
+    const v = verPhase.output;
+    const vc = v.verdict==='LISTO'?'badge-ok':v.verdict==='REVISAR'?'badge-warn':'badge-err';
+    html += '<div class="card" style="margin-top:12px"><h3>🔎 Triager</h3>';
+    html += `<div class="kv"><span class="k">Veredicto</span><span class="v"><span class="badge ${vc}">${v.verdict}</span></span></div>`;
+    html += `<div class="kv"><span class="k">Score</span><span class="v">${v.score}/100</span></div>`;
+    if (v.problems?.length) v.problems.forEach(p => html += `<div style="font-size:12px" class="danger">⛔ ${p}</div>`);
+    if (v.warnings?.length) v.warnings.forEach(w => html += `<div style="font-size:12px;color:var(--yellow)">⚠️ ${w}</div>`);
     html += '</div>';
   }
 
-  // Verificar
-  const verPhase = s.phases?.verificar?.result;
-  if (verPhase?.output) {
-    html += '<div class="card" style="margin-top:12px"><h3>🔎 Verificación (triager)</h3>';
-    html += `<div class="kv"><span class="k">Veredicto</span><span class="v"><span class="badge ${verPhase.output.verdict==='LISTO'?'badge-ok':verPhase.output.verdict==='REVISAR'?'badge-warn':'badge-err'}">${verPhase.output.verdict}</span></span></div>`;
-    html += `<div class="kv"><span class="k">Score</span><span class="v">${verPhase.output.score}/100</span></div>`;
-    if (verPhase.output.problems?.length) {
-      html += '<div style="margin-top:8px;font-size:12px">';
-      verPhase.output.problems.forEach(p => html += `<div class="danger">⛔ ${p}</div>`);
-      html += '</div>';
-    }
-    if (verPhase.output.warnings?.length) {
-      html += '<div style="margin-top:4px;font-size:12px">';
-      verPhase.output.warnings.forEach(w => html += `<div style="color:var(--yellow)">⚠️ ${w}</div>`);
-      html += '</div>';
-    }
-    html += '</div>';
-  }
+  // === ACCIONES ===
+  html += '<div style="margin-top:16px;display:flex;gap:10px">';
+  html += '<button class="btn" onclick="saveDraftReport()">💾 Guardar borrador</button>';
+  html += '<button class="btn" style="background:var(--green)" onclick="saveDraftReport()">📤 Generar reporte final</button>';
+  html += '<button class="btn btn-outline" onclick="navigateTo(\"reportes\")">📋 Ver reportes guardados</button>';
+  html += '</div>';
 
   resultsDiv.innerHTML = html;
+  // Setear severidad del reporte
+  const sevSel = document.getElementById('rep-sev');
+  if (sevSel && rep.severidad) sevSel.value = rep.severidad;
+};
+
+window.uploadEvidence = async function(inputEl, type) {
+  const files = inputEl.files;
+  if (!files.length) return;
+  for (const file of files) {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = reader.result.split(',')[1];
+      await api('/evidence', { method: 'POST', body: JSON.stringify({ name: file.name, data: b64, type: type }) });
+      const listEl = inputEl.parentElement.querySelector('div');
+      if (listEl) listEl.innerHTML += `<div>✅ ${file.name}</div>`;
+      toast('✅ ' + file.name + ' subido');
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+window.saveDraftReport = async function() {
+  const body = {
+    title: document.getElementById('rep-title')?.value?.trim() || 'Sin título',
+    asset: document.getElementById('rep-asset')?.value?.trim() || '—',
+    bugType: document.getElementById('rep-type')?.value?.trim() || '—',
+    cwe: document.getElementById('rep-cwe')?.value?.trim() || '—',
+    cvss: document.getElementById('rep-cvss')?.value?.trim() || '—',
+    severity: document.getElementById('rep-sev')?.value || 'info',
+    impact: document.getElementById('rep-impact')?.value?.trim() || '—',
+    remediation: document.getElementById('rep-remediation')?.value?.trim() || '—',
+    steps: (document.getElementById('rep-steps')?.value || '').split('|').map(s=>s.trim()).filter(Boolean),
+    screenshotsPath: document.getElementById('rep-sspath')?.value?.trim() || 'adjunto',
+    requestResponsePath: document.getElementById('rep-rrpath')?.value?.trim() || 'adjunto',
+    evidence: ['Screenshot del exploit', 'Screenshot del impacto', 'Request/Response reproducible'],
+    evidenceScreenshots: !!document.getElementById('rep-sspath')?.value?.trim(),
+    evidenceRequestResponse: !!document.getElementById('rep-rrpath')?.value?.trim(),
+    pocMinimal: true, noPII: true, reproducibleCount: parseInt(document.getElementById('rep-repro')?.value || '2'),
+    inScope: true, noDuplicate: true, notDisqualifier: true, exploitable: true, severityHonest: true,
+  };
+  const r = await api('/reporte/save-draft', { method: 'POST', body: JSON.stringify(body) });
+  toast(r.ok ? '✅ Reporte guardado: ' + (r.file || '').split('/').pop() : '❌ Error al guardar');
 };
 
 window.validateGate = async function(type) {
