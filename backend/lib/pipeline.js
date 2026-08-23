@@ -113,18 +113,8 @@ async function runPhase(ctx, phaseId, params = {}) {
       const hdrs = await scannerMod.securityHeaders(url);
       const cors = await scannerMod.corsProbe(url);
 
-      // nuclei via Docker (optional, nunca bloquea el pipeline)
-      let nucleiFindings = [];
-      let nucleiTool = null;
-      if (dockerReady()) {
-        try {
-          const nRes = dockerExec('nuclei', `-u ${url} -t http/misconfiguration -severity low,medium,high,critical -silent -timeout 5 -retries 0 -max-host-error 3`, 30000);
-          if (nRes.ok && nRes.output.trim()) {
-            nucleiFindings = nRes.output.trim().split('\n').filter(Boolean);
-            nucleiTool = 'nuclei (Docker)';
-          }
-        } catch { /* nuclei timeout — continuar sin él */ }
-      }
+      // Nuclei skipped in auto-pipeline (too slow through sg docker)
+      // Run manually: docker exec knk-kali nuclei -u TARGET -t http/misconfiguration -silent
 
       result.output = {
         url,
@@ -132,15 +122,12 @@ async function runPhase(ctx, phaseId, params = {}) {
         headersPresentes: hdrs.present.map(h => h.label),
         headersAusentes: hdrs.missing.map(h => h.label),
         cors: { acao: cors.acao, acac: cors.acac, suspicious: cors.suspicious },
-        nuclei: nucleiFindings.length ? { tool: nucleiTool, findings: nucleiFindings.slice(0, 20) } : null,
+        nuclei: dockerReady() ? '⏭ Saltado (ejecuta manual: docker exec knk-kali nuclei -u URL -t http/misconfiguration)' : null,
         dockerKali: dockerReady(),
       };
 
       if (hdrs.missing.length) result.findings.push({ type: 'SCAN', summary: `${hdrs.missing.length} headers de seguridad ausentes`, severity: 'info' });
       if (cors.suspicious) result.findings.push({ type: 'SCAN', summary: 'CORS sospechoso — validar con compuerta', severity: 'low' });
-      if (nucleiFindings.length) {
-        nucleiFindings.slice(0, 10).forEach(f => result.findings.push({ type: 'NUCLEI', summary: f.slice(0, 120), severity: 'low' }));
-      }
       break;
     }
 

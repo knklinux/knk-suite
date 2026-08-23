@@ -1,74 +1,54 @@
 'use strict';
 
 // ============================================================================
-// KNK SUITE v2 — Integración Docker Kali (usa sg docker si el usuario no
-// está en el grupo docker)
+// KNK SUITE v2 — Integración Docker Kali
+// Usa sg docker porque el usuario no está en el grupo docker
+// spawnSync con timeout hard para evitar bloqueos
 // ============================================================================
 
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const CONTAINER = process.env.KNK_KALI_CONTAINER || 'knk-kali';
 
-// Detect if we need sg docker (user not in docker group)
-let _needsSg = null;
-function _dockerCmd() {
-  if (_needsSg === null) {
-    try {
-      execSync('docker ps', { encoding: 'utf8', timeout: 3000, stdio: 'ignore' });
-      _needsSg = false;
-    } catch {
-      _needsSg = true;
-    }
-  }
-  return _needsSg ? 'sg docker -c' : '';
-}
+let _needsSg = true; // siempre sg en esta máquina
 
 function isRunning() {
   try {
-    const prefix = _dockerCmd();
-    const cmd = prefix
-      ? `${prefix} "docker inspect -f '{{.State.Running}}' ${CONTAINER}"`
-      : `docker inspect -f '{{.State.Running}}' ${CONTAINER}`;
-    const out = execSync(cmd, { encoding: 'utf8', timeout: 5000 }).trim();
-    return out === 'true';
+    const r = spawnSync('sg', ['docker', '-c', `docker inspect -f '{{.State.Running}}' ${CONTAINER}`], {
+      encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe']
+    });
+    return r.stdout.trim() === 'true';
   } catch { return false; }
 }
 
 function exec(tool, args, opts = {}) {
-  const timeout = Math.min(opts.timeoutMs || 30000, 30000); // Hard cap at 30s
+  const timeout = Math.min(opts.timeoutMs || 10000, 10000); // hard cap 10s
   const toolMap = { httpx: 'httpx-toolkit' };
   const binary = toolMap[tool] || tool;
-  // Simple execSync with spawn-based timeout to avoid hangs
   const dockerExecCmd = `docker exec ${CONTAINER} ${binary} ${args}`;
-  const prefix = _dockerCmd();
-  const cmd = prefix ? `${prefix} "${dockerExecCmd}"` : dockerExecCmd;
+
   try {
-    const { spawnSync } = require('child_process');
-    const [shellCmd, ...shellArgs] = cmd.includes('sg ')
-      ? ['sg', 'docker', '-c', dockerExecCmd]
-      : ['/bin/sh', '-c', cmd];
-    const r = spawnSync(shellCmd, shellArgs, {
+    const r = spawnSync('sg', ['docker', '-c', dockerExecCmd], {
       encoding: 'utf8',
       timeout,
-      maxBuffer: 5 * 1024 * 1024,
+      maxBuffer: 2 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
+      killSignal: 'SIGKILL',
     });
     const out = (r.stdout || '').trim();
-    if (r.error && !out) throw r.error;
+    if (r.error && !out) return { ok: false, output: '', missing: false };
     return { ok: true, output: out };
   } catch (e) {
-    return { ok: false, output: String(e.stdout || '') + String(e.stderr || '').slice(0, 500), missing: false };
+    return { ok: false, output: String(e.message || '').slice(0, 200), missing: false };
   }
 }
 
 function ensureRunning() {
   if (isRunning()) return true;
   try {
-    const prefix = _dockerCmd();
-    const cmd = prefix
-      ? `${prefix} "docker start ${CONTAINER}"`
-      : `docker start ${CONTAINER}`;
-    execSync(cmd, { encoding: 'utf8', timeout: 30000 });
+    spawnSync('sg', ['docker', '-c', `docker start ${CONTAINER}`], {
+      encoding: 'utf8', timeout: 30000, stdio: 'ignore'
+    });
     return isRunning();
   } catch { return false; }
 }
