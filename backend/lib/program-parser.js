@@ -1,15 +1,15 @@
 'use strict';
 
 // ============================================================================
-// KNK SUITE v2 — Parser de programas de bug bounty (YesWeHack)
-// Extrae scope, out-of-scope, UA, políticas, rewards desde URL del programa
+// KNK SUITE v2 — Parser de programas de bug bounty
+// Soporta: YesWeHack (auto-parse) + HackerOne (modo guiado, SPA bloquea)
 // ============================================================================
 
 const { getText } = require('./net');
 
 const YWH_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36';
 
-// TLDs reales (lista estricta — excluye extensiones de archivo)
+// TLDs reales
 const TLD_SET = new Set([
   'com', 'net', 'org', 'io', 'co', 'dev', 'fr', 'ch', 'de', 'es', 'it', 'app',
   'cloud', 'xyz', 'info', 'ai', 'me', 'ru', 'nl', 'be', 'se', 'no', 'fi', 'dk',
@@ -19,7 +19,6 @@ const TLD_SET = new Set([
   'solutions', 'group', 'team', 'systems', 'services', 'software', 'network',
 ]);
 
-// Dominios genéricos/infraestructura
 const GENERIC = new Set([
   'google.com', 'github.com', 'apple.com', 'play.google.com', 'apps.apple.com',
   'firebounty.com', 'linkedin.com', 'twitter.com', 'facebook.com', 'instagram.com',
@@ -30,12 +29,11 @@ const GENERIC = new Set([
   'schema.org', 'googletagmanager.com', 'google-analytics.com', 'ywh.com',
   'cdn-yeswehack.com', 'imgur.com', 'youtube.com', 'vimeo.com', 'discord.com',
   'slack.com', 'telegram.org', 'whatsapp.com', 'medium.com', 'gmail.com',
-  'outlook.com', 'microsoft.com', 'google.co', 'gstatic.com', 'fontawesome.com',
+  'outlook.com', 'microsoft.com', 'google.co', 'fontawesome.com',
   'cdnjs.cloudflare.com', 'maxcdn.bootstrapcdn.com',
 ]);
 
 function rootOf(domain) {
-  // Toma las últimas 2 labels (deezer.com de www.deezer.com)
   const parts = domain.split('.');
   return parts.slice(-2).join('.');
 }
@@ -61,6 +59,20 @@ function isValidDomain(d) {
   return true;
 }
 
+/**
+ * Detecta la plataforma desde la URL.
+ */
+function detectPlatform(url) {
+  if (/yeswehack\.com/i.test(url)) return 'yeswehack';
+  if (/hackerone\.com/i.test(url)) return 'hackerone';
+  if (/bugcrowd\.com/i.test(url)) return 'bugcrowd';
+  if (/intigriti\.com/i.test(url)) return 'intigriti';
+  return 'unknown';
+}
+
+/**
+ * Parsea programa YesWeHack (server-side rendered, scrapeable).
+ */
 async function parseYesWeHack(url) {
   const html = await getText(url, {
     headers: { 'User-Agent': YWH_UA },
@@ -71,6 +83,7 @@ async function parseYesWeHack(url) {
 
   const result = {
     source: 'yeswehack',
+    autoParsed: true,
     programUrl: url,
     programName: '',
     target: '',
@@ -91,82 +104,54 @@ async function parseYesWeHack(url) {
   const scopeHtml = outIdx > -1 ? html.slice(0, outIdx) : html;
   const outHtml = outIdx > -1 ? html.slice(outIdx, outIdx + 10000) : '';
 
-  // ── Extraer dominios de la sección scope ──
+  // ── Extraer dominios ──
   const domRe = /[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+/gi;
 
-  const scopeDomains = new Set();
-  const scopeMatches = scopeHtml.match(domRe) || [];
-  for (const m of scopeMatches) {
+  const scopeSet = new Set();
+  for (const m of scopeHtml.match(domRe) || []) {
     const c = cleanDomain(m);
-    if (isValidDomain(c)) scopeDomains.add(c);
+    if (isValidDomain(c)) scopeSet.add(c);
   }
 
-  const outDomains = new Set();
-  const outMatches = outHtml.match(domRe) || [];
-  for (const m of outMatches) {
+  const outSet = new Set();
+  for (const m of outHtml.match(domRe) || []) {
     const c = cleanDomain(m);
-    if (isValidDomain(c)) outDomains.add(c);
+    if (isValidDomain(c)) outSet.add(c);
   }
 
-  // ── Agrupar por root domain y encontrar el del programa ──
-  // 1. Quitar dominios out-of-scope de los in-scope
-  for (const od of outDomains) scopeDomains.delete(od);
+  // Quitar out-of-scope de in-scope
+  for (const od of outSet) scopeSet.delete(od);
 
-  // 2. Agrupar por root
+  // Agrupar por root domain
   const rootFreq = {};
-  for (const d of scopeDomains) {
+  for (const d of scopeSet) {
     const root = rootOf(d);
     rootFreq[root] = (rootFreq[root] || 0) + 1;
   }
-  // Ordenar por frecuencia, descartando roots genéricos
   const rootEntries = Object.entries(rootFreq)
     .filter(([root]) => !GENERIC.has(root))
     .sort((a, b) => b[1] - a[1]);
 
   let domains = [];
   if (rootEntries.length) {
-    // El root más frecuente es el dominio del programa
     const programRoot = rootEntries[0][0];
-    domains = [...scopeDomains].filter(d => {
-      const r = rootOf(d);
-      return r === programRoot;
-    });
-    // Si el root del programa no capturó suficientes, añadir otros roots frecuentes
+    domains = [...scopeSet].filter(d => rootOf(d) === programRoot);
     if (domains.length < 2 && rootEntries.length > 1) {
       for (const [root] of rootEntries.slice(1, 4)) {
-        const extra = [...scopeDomains].filter(d => rootOf(d) === root);
-        domains = domains.concat(extra);
+        domains = domains.concat([...scopeSet].filter(d => rootOf(d) === root));
       }
     }
   } else {
-    domains = [...scopeDomains];
+    domains = [...scopeSet];
   }
 
   result.domains = domains.slice(0, 25);
   result.target = domains[0] || '';
-  result.outOfScope = [...outDomains].filter(d => !GENERIC.has(d)).slice(0, 20);
+  result.outOfScope = [...outSet].filter(d => !GENERIC.has(d)).slice(0, 20);
 
-  // ── User-Agent requerido ──
-  const uaPatterns = [
-    /append[\s\S]{0,120}["'‘’]\s*(bug-bounty-?\s*[\w-]+)["'‘’]/i,
-    /\(bug-bounty-?\s*[\w-]+\)/i,
-    /(bug-bounty-?\s*HunterName)/i,
-    /(bug-bounty[\s-][\w-]{3,30})/i,
-  ];
-  for (const re of uaPatterns) {
-    const m = html.match(re);
-    if (m) {
-      let ua = (m[1] || m[0]).trim().replace(/['"‘’]/g, '');
-      if (ua.startsWith('bug-bounty')) ua = `knk-suite-researcher/2.0 ${ua}`;
-      result.userAgent = ua;
-      break;
-    }
-  }
-  // Si no encontró nada, buscar la frase exacta de la política
-  if (!result.userAgent) {
-    const sectMatch = html.match(/User agent[\s\S]{0,300}?bug.?bounty[\s\S]{0,50}?([\w-]{3,40})/i);
-    if (sectMatch) result.userAgent = `knk-suite-researcher/2.0 bug-bounty-${sectMatch[1]}`;
-  }
+  // ── User-Agent ──
+  const uaMatch = html.match(/bug-bounty[-\s]*(HunterName|[\w-]{3,30})/i);
+  if (uaMatch) result.userAgent = `knk-suite-researcher/2.0 bug-bounty-${uaMatch[1]}`;
 
   // ── Rate limit ──
   if (/automated (scanners|tools)/i.test(html)) result.rateLimit = 1000;
@@ -182,13 +167,12 @@ async function parseYesWeHack(url) {
   }
   result.rewards = rewards.length ? rewards.join(' | ') : 'Consultar grid';
 
-  // ── Política resumida ──
+  // ── Política ──
   const policyBits = [];
   if (/responsible disclosure/i.test(html)) policyBits.push('Responsible Disclosure');
-  if (/coordinated disclosure/i.test(html)) policyBits.push('Coordinated Disclosure');
   if (/CVSS/i.test(html)) policyBits.push('CVSS 3.1');
   if (/No DoS|denial of service/i.test(html)) policyBits.push('No DoS');
-  if (/screenshots/i.test(html)) policyBits.push('Screenshots requeridos');
+  if (/screenshots/i.test(html)) policyBits.push('Screenshots');
   if (/proof of concept|PoC/i.test(html)) policyBits.push('PoC obligatorio');
   if (/user agent/i.test(html)) policyBits.push('User-Agent obligatorio');
   result.policy = policyBits.join(' | ') || 'Leer política completa';
@@ -196,4 +180,69 @@ async function parseYesWeHack(url) {
   return result;
 }
 
-module.exports = { parseYesWeHack };
+/**
+ * HackerOne: SPA (React) — no scrapeable server-side.
+ * Devuelve modo guiado para que el usuario pegue los datos.
+ */
+function parseHackerOne(url) {
+  // Extraer nombre del programa del slug de la URL
+  const slug = url.split('/').filter(Boolean).pop() || '';
+  const programName = slug.replace(/-/g, ' ').replace(/bug.?bounty.*/i, '').trim();
+
+  return {
+    source: 'hackerone',
+    autoParsed: false,
+    programUrl: url,
+    programName: programName || 'Programa HackerOne',
+    target: '',
+    domains: [],
+    outOfScope: [],
+    userAgent: '',
+    policy: 'Coordinated Disclosure | CVSS 3.1 | Screenshots | PoC obligatorio',
+    rewards: 'Consultar grid en la página del programa',
+    rateLimit: 1000,
+    note: '⚠️  HackerOne es una SPA (React) — no scrapeable automáticamente. Pega manualmente los dominios del scope y out-of-scope desde la pestaña "Scope" del programa.',
+    hint: 'Abre la página del programa en el navegador, ve a la pestaña "Scope", copia los dominios y pégalos en el campo Scope del Dashboard.',
+  };
+}
+
+/**
+ * Bugcrowd / Intigriti: similar a HackerOne — SPAs.
+ */
+function parseOther(url, platform) {
+  return {
+    source: platform,
+    autoParsed: false,
+    programUrl: url,
+    programName: `Programa ${platform}`,
+    target: '',
+    domains: [],
+    outOfScope: [],
+    userAgent: '',
+    policy: 'Consultar política del programa',
+    rewards: 'Consultar grid',
+    rateLimit: 1000,
+    note: `⚠️  ${platform} es una SPA — no scrapeable automáticamente. Pega manualmente los dominios del scope desde la página del programa.`,
+  };
+}
+
+/**
+ * Parser unificado: auto-detecta plataforma y aplica la estrategia correcta.
+ */
+async function parseProgram(url) {
+  const platform = detectPlatform(url);
+
+  switch (platform) {
+    case 'yeswehack':
+      return parseYesWeHack(url);
+    case 'hackerone':
+      return parseHackerOne(url);
+    case 'bugcrowd':
+    case 'intigriti':
+      return parseOther(url, platform);
+    default:
+      return { error: `Plataforma no soportada: ${platform}. Solo YesWeHack (auto) y HackerOne/Bugcrowd/Intigriti (manual).` };
+  }
+}
+
+module.exports = { parseProgram, parseYesWeHack, parseHackerOne, detectPlatform };
