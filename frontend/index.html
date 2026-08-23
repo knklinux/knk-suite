@@ -115,11 +115,12 @@ async function renderDashboard() {
   // Quick setup
   html += '<div class="card" style="margin-bottom:16px">';
   html += '<h3>⚡ Setup rápido</h3>';
+  html += `<input id="quick-program-url" placeholder="Pega la URL del programa YesWeHack (ej: /programs/deezer-...)" value="${s.artifacts?.programUrl || ''}">`;
+  html += '<button class="btn btn-sm" onclick="autoParseProgram()" style="margin-right:8px">🔍 Auto-rellenar desde URL</button>';
+  html += '<span class="muted">Pega la URL del programa y la suite extrae scope, UA, políticas automáticamente</span>';
   html += `<input id="quick-target" placeholder="URL del programa (ej: example.com)" value="${s.target || ''}">`;
   html += `<input id="quick-scope" placeholder="Scope (ej: *.example.com, api.example.com)" value="${(s.scope||[]).join(', ')}">`;
   html += `<input id="quick-ua" placeholder="User-Agent permitido (según política del programa)">`;
-  html += `<input id="quick-program" placeholder="URL de la política/scope del programa">`;
-  html += `<input id="quick-ratelimit" placeholder="Rate limit (ms entre requests, default: 500)" value="500">`;
   html += '<button class="btn btn-sm" onclick="quickSetup()">Fijar objetivo</button>';
   html += '</div>';
 
@@ -349,6 +350,22 @@ async function renderChat() {
 }
 
 // ============ ACTIONS ============
+
+window.autoParseProgram = async function() {
+  const url = document.getElementById('quick-program-url').value.trim();
+  if (!url) return toast('Pega la URL del programa de YesWeHack');
+  toast('🔍 Analizando programa...');
+  const r = await api('/parse-program', { method: 'POST', body: JSON.stringify({ url }) });
+  if (!r.ok) return toast('❌ ' + (r.error || 'Error al parsear'));
+  const p = r.parsed;
+  toast('✅ Programa: ' + p.programName + ' | ' + p.domains.length + ' dominios | UA: ' + (p.userAgent ? 'configurado' : 'default') + ' | Rate: ' + p.rateLimit + 'ms');
+  // Fill fields
+  document.getElementById('quick-target').value = p.target;
+  document.getElementById('quick-scope').value = p.domains.join(', ');
+  document.getElementById('quick-ua').value = p.userAgent;
+  document.getElementById('quick-program-url').value = p.programUrl;
+  await navigateTo('dashboard');
+};
 
 window.quickSetup = async function() {
   const target = document.getElementById('quick-target').value.trim();

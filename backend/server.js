@@ -17,6 +17,7 @@ const llm = require('./lib/llm');
 const reportMod = require('./lib/report');
 const verifierMod = require('./lib/verifier');
 const netMod = require('./lib/net');
+const programParser = require('./lib/program-parser');
 
 const PORT = parseInt(process.env.KNK_PORT || '8086', 10);
 const ROOT = path.join(__dirname, '..');
@@ -171,6 +172,34 @@ const server = http.createServer(async (req, res) => {
       evidenceDir: netMod.getEvidenciaDir(),
       evidenceFiles: s.artifacts?.evidenceFiles || [],
     });
+  }
+
+  // =========================================================================
+  // API: Parsear programa desde URL (auto-fill)
+  // =========================================================================
+  if (u.pathname === '/api/parse-program' && req.method === 'POST') {
+    const body = await readJSON(req);
+    const url = body.url;
+    if (!url) return sendJSON(res, 400, { ok: false, error: 'URL del programa requerida' });
+
+    const parsed = await programParser.parseYesWeHack(url);
+    if (parsed.error) return sendJSON(res, 400, { ok: false, error: parsed.error });
+
+    // Auto-fill session
+    const s = sessionMod.load(SESSION_FILE);
+    s.target = parsed.target;
+    s.scope = parsed.domains;
+    sessionMod.setArtifact(s, 'outOfScope', parsed.outOfScope);
+    sessionMod.setArtifact(s, 'programUrl', parsed.programUrl);
+    sessionMod.setArtifact(s, 'programName', parsed.programName);
+    sessionMod.setArtifact(s, 'programPolicy', parsed.policy);
+    sessionMod.setArtifact(s, 'rewards', parsed.rewards);
+    netMod.setScope(parsed.domains);
+    if (parsed.userAgent) netMod.setUA(parsed.userAgent);
+    netMod.setRateLimit(parsed.rateLimit);
+    sessionMod.save(SESSION_FILE, s);
+
+    return sendJSON(res, 200, { ok: true, parsed });
   }
 
   // =========================================================================
