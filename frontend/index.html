@@ -172,13 +172,19 @@ async function renderDashboard() {
 
 async function renderOpplan() {
   const s = await api('/session');
+  // Heredar del objetivo fijado si no hay OPPLAN previo
+  const inheritedName = s.opplan?.nombre || (s.target ? 'BB-' + s.target.replace(/\./g, '-') : '');
+  const inheritedScope = (s.opplan?.scope || []).length ? s.opplan.scope : s.scope;
+  const inheritedNoTocar = (s.opplan?.noTocar || []).length ? s.opplan.noTocar : (s.artifacts?.outOfScope || []);
+  const inheritedObjetivo = s.opplan?.objetivo || (s.target ? 'auditar seguridad de ' + s.scope.join(', ') : '');
+
   let html = '<h2>📋 OPPLAN</h2>';
 
   html += '<div class="card"><h3>Crear / Editar OPPLAN</h3>';
-  html += `<input id="op-nombre" placeholder="Nombre de la operación" value="${s.opplan?.nombre || ''}">`;
-  html += `<input id="op-objetivo" placeholder="Objetivo (ej: encontrar IDOR en /api/v1/users)" value="${s.opplan?.objetivo || ''}">`;
-  html += `<input id="op-scope" placeholder="Scope (separado por comas)" value="${(s.opplan?.scope||[]).join(', ')}">`;
-  html += `<input id="op-notocar" placeholder="NO TOCAR (separado por comas)" value="${(s.opplan?.noTocar||[]).join(', ')}">`;
+  html += `<input id="op-nombre" placeholder="Nombre de la operación" value="${inheritedName}">`;
+  html += `<input id="op-objetivo" placeholder="Objetivo (ej: encontrar IDOR en /api/v1/users)" value="${inheritedObjetivo}">`;
+  html += `<input id="op-scope" placeholder="Scope (separado por comas)" value="${inheritedScope.join(', ')}">`;
+  html += `<input id="op-notocar" placeholder="NO TOCAR (separado por comas)" value="${inheritedNoTocar.join(', ')}">`;
   html += `<input id="op-ratelimit" placeholder="Rate limit" value="${s.opplan?.rateLimit || '1 req / 2s'}">`;
   html += `<input id="op-ventana" placeholder="Ventana horaria" value="${s.opplan?.ventana || '09:00–18:00 CET'}">`;
   html += `<label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer;font-size:13px">`;
@@ -375,8 +381,11 @@ window.quickSetup = async function() {
   if (!target) return toast('Define el objetivo');
   if (!scope) return toast('Define el scope — sin scope documentado no se puede auditar');
   const r = await api('/target', { method: 'POST', body: JSON.stringify({ target, scope, userAgent, programUrl, rateLimitMs: 2000 }) });
-  if (r.ok) toast('✅ Objetivo fijado | Scope: ' + scope + ' | UA: ' + (userAgent ? 'SI' : 'default'));
-  else toast('❌ Error al fijar');
+  if (r.ok) {
+    toast('✅ Objetivo fijado | ' + r.scope.length + ' dominios | UA: ' + (userAgent ? 'SI' : 'default'));
+    // Llevar al OPPLAN — ya está pre-rellenado con scope, out-of-scope, nombre
+    await navigateTo('opplan');
+  } else toast('❌ Error al fijar');
 };
 
 window.saveOpplan = async function() {
