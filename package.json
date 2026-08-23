@@ -1,14 +1,25 @@
 {
   "name": "knk-suite",
-  "version": "2.0.0",
-  "description": "KnkSuite v2 — Bug bounty pipeline todo-en-uno. URL → OPPLAN → recon → scan → fuzz → exploit → reporte. Un solo puerto, GUI web, Docker Kali para herramientas.",
-  "main": "backend/server.js",
+  "version": "2.1.0",
+  "description": "Bug bounty suite — backend + React frontend + Kali Docker terminal",
+  "main": "backend/index.js",
   "scripts": {
-    "start": "node backend/server.js",
-    "dev": "node --watch backend/server.js"
+    "start": "node backend/index.js",
+    "dev": "concurrently \"node backend/index.js\" \"cd frontend && npm run dev\"",
+    "build": "cd frontend && npm run build",
+    "setup": "cd frontend && npm install && cd .. && npm install",
+    "test": "node backend/test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.21.0",
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
   },
   "engines": {
     "node": ">=18"
-  },
-  "license": "MIT"
+  }
 }

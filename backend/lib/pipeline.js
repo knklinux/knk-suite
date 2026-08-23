@@ -53,10 +53,15 @@ async function runPhase(ctx, phaseId, params = {}) {
   switch (phaseId) {
     case 'plan': {
       // Validar OPPLAN
-      if (!session.opplan) return { ...result, ok: false, error: 'No hay OPPLAN. Créalo primero.' };
-      const v = opplanMod.validate(session.opplan);
-      if (!v.ok) return { ...result, ok: false, error: `OPPLAN incompleto: ${v.pendientes.join(', ')}` };
-      result.output = opplanMod.render(session.opplan);
+      const opplan = session.opplan || {};
+      if (!opplan.nombre) return { ...result, ok: false, error: 'No hay OPPLAN. Créalo primero.' };
+      try {
+        const v = opplanMod.validate(opplan);
+        if (!v.ok) return { ...result, ok: false, error: `OPPLAN incompleto: ${v.pendientes.join(', ')}` };
+        result.output = opplanMod.render(opplan);
+      } catch (e) {
+        result.output = { draft: true, nombre: opplan.nombre, status: opplan.status || 'pendiente' };
+      }
       break;
     }
 
