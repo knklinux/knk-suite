@@ -13,12 +13,26 @@ const dorksMod = require('./dorks');
 const reportMod = require('./report');
 const verifierMod = require('./verifier');
 const llmMod = require('./llm');
+const dockerMod = require('./docker');
+const { execSync } = require('child_process');
+
+// ── Docker Kali helpers ──────────────────────────────
+let _dockerAvailable = null;
+function dockerReady() {
+  if (_dockerAvailable === null) _dockerAvailable = dockerMod.ensureRunning();
+  return _dockerAvailable;
+}
+
+function dockerExec(tool, args, timeoutMs = 60000) {
+  if (!dockerReady()) return { ok: false, output: '', missing: true };
+  return dockerMod.exec(tool, args, { timeoutMs });
+}
 
 const PHASES = [
   { id: 'plan', nombre: 'PLAN', desc: 'OPPLAN: scope, RoE, límites, autorización' },
   { id: 'recon', nombre: 'RECON', desc: 'Subdominios, wayback, tecnologías, dorks' },
-  { id: 'scan', nombre: 'SCAN', desc: 'Headers de seguridad, CORS, CVEs NVD' },
-  { id: 'fuzz', nombre: 'FUZZ', desc: 'Directorios y archivos ocultos' },
+  { id: 'scan', nombre: 'SCAN', desc: 'Headers de seguridad, CORS, CVEs NVD, nuclei (Docker)' },
+  { id: 'fuzz', nombre: 'FUZZ', desc: 'Directorios y archivos ocultos (ffuf Docker o nativo)' },
   { id: 'exploit', nombre: 'EXPLOIT', desc: 'Validar candidatos con compuertas' },
   { id: 'reporte', nombre: 'REPORTE', desc: 'Generar reporte solo si pasan compuertas' },
   { id: 'verificar', nombre: 'VERIFICAR', desc: 'Releer borrador como triager' },
@@ -49,27 +63,44 @@ async function runPhase(ctx, phaseId, params = {}) {
     case 'recon': {
       const host = params.target || session.target;
       if (!host) return { ...result, ok: false, error: 'Sin target. Define objetivo.' };
-      const h = require('./net').normalizeHost(host);
+      const net = require('./net');
+      const h = net.normalizeHost(host);
       const proto = host.includes('://') ? host : `https://${h}`;
 
-      const subs = await reconMod.subdomains(h);
+      // Intentar subfinder via Docker Kali primero
+      let subs = [];
+      let subTool = 'crt.sh';
+      if (dockerReady()) {
+        const subRes = dockerExec('subfinder', `-d ${h} -silent -timeout 15`, 90000);
+        if (subRes.ok && subRes.output.trim()) {
+          subs = subRes.output.trim().split('\n').map(l => net.normalizeHost(l)).filter(Boolean);
+          subTool = 'subfinder (Docker)';
+        }
+      }
+      if (!subs.length) {
+        subs = await reconMod.subdomains(h);
+        subTool = 'crt.sh (fallback)';
+      }
+
       const urls = await reconMod.wayback(h, 200);
       const tech = await reconMod.techDetect(proto);
 
       result.output = {
+        tool: subTool,
         subdominios: subs.slice(0, 50),
         totalSubs: subs.length,
         urls: urls.slice(0, 20),
         totalUrls: urls.length,
         tecnologias: tech.tech,
         status: tech.status,
+        dockerKali: dockerReady(),
       };
 
       ctx.setArtifact('subdominios', subs);
       ctx.setArtifact('urls_historicas', urls);
       ctx.setArtifact('tech', tech.tech);
 
-      if (subs.length) result.findings.push({ type: 'RECON', summary: `${subs.length} subdominios encontrados`, severity: 'info' });
+      if (subs.length) result.findings.push({ type: 'RECON', summary: `${subs.length} subdominios (${subTool})`, severity: 'info' });
       if (urls.length) result.findings.push({ type: 'RECON', summary: `${urls.length} URLs históricas`, severity: 'info' });
       result.findings.push({ type: 'RECON', summary: `Tech: ${tech.tech.slice(0, 5).join(', ') || 'sin firma clara'}`, severity: 'info' });
       break;
@@ -82,16 +113,32 @@ async function runPhase(ctx, phaseId, params = {}) {
       const hdrs = await scannerMod.securityHeaders(url);
       const cors = await scannerMod.corsProbe(url);
 
+      // nuclei scan via Docker Kali si está disponible
+      let nucleiFindings = [];
+      let nucleiTool = null;
+      if (dockerReady()) {
+        const nRes = dockerExec('nuclei', `-u ${url} -t http/exposures -t http/misconfiguration -t http/takeovers -severity low,medium,high,critical -rl 3 -silent -timeout 8 -retries 1 -max-host-error 5`, 180000);
+        if (nRes.ok) {
+          nucleiFindings = nRes.output.trim().split('\n').filter(Boolean);
+          nucleiTool = 'nuclei (Docker)';
+        }
+      }
+
       result.output = {
         url,
         status: hdrs.status,
         headersPresentes: hdrs.present.map(h => h.label),
         headersAusentes: hdrs.missing.map(h => h.label),
         cors: { acao: cors.acao, acac: cors.acac, suspicious: cors.suspicious },
+        nuclei: nucleiFindings.length ? { tool: nucleiTool, findings: nucleiFindings.slice(0, 20) } : null,
+        dockerKali: dockerReady(),
       };
 
       if (hdrs.missing.length) result.findings.push({ type: 'SCAN', summary: `${hdrs.missing.length} headers de seguridad ausentes`, severity: 'info' });
       if (cors.suspicious) result.findings.push({ type: 'SCAN', summary: 'CORS sospechoso — validar con compuerta', severity: 'low' });
+      if (nucleiFindings.length) {
+        nucleiFindings.slice(0, 10).forEach(f => result.findings.push({ type: 'NUCLEI', summary: f.slice(0, 120), severity: 'low' }));
+      }
       break;
     }
 
@@ -99,10 +146,25 @@ async function runPhase(ctx, phaseId, params = {}) {
       const url = params.url || (session.target ? (session.target.includes('://') ? session.target : `https://${session.target}`) : null);
       if (!url) return { ...result, ok: false, error: 'Sin URL para fuzz.' };
 
-      const fres = await fuzzerMod.fuzz(url, { concurrency: 3, delayMs: 300 });
-      result.output = { tool: fres.tool, baseline: fres.baseline, total: fres.total, findings: fres.findings.slice(0, 30) };
+      let fres;
+      // Intentar ffuf via Docker Kali
+      if (dockerReady()) {
+        const base = String(url).replace(/\/+$/, '');
+        const wlFile = '/data/common.txt';
+        // Copiar wordlist al contenedor si hace falta
+        const ffufRes = dockerExec('ffuf', `-u ${base}/FUZZ -w ${wlFile} -mc 200,201,204,301,302,307,401,403,405,500 -t 10 -s`, 180000);
+        if (ffufRes.ok && ffufRes.output.trim()) {
+          const lines = ffufRes.output.trim().split('\n').filter(Boolean);
+          fres = { tool: 'ffuf (Docker)', baseline: 0, total: lines.length, findings: lines.map(l => ({ path: l, status: 0 })) };
+        }
+      }
+      if (!fres) {
+        fres = await fuzzerMod.fuzz(url, { concurrency: 3, delayMs: 300, tool: dockerReady() ? 'native (Docker sin ffuf)' : 'native' });
+      }
 
-      if (fres.findings.length) result.findings.push({ type: 'FUZZ', summary: `${fres.findings.length} rutas interesantes`, severity: 'info' });
+      result.output = { tool: fres.tool, baseline: fres.baseline, total: fres.total, findings: fres.findings.slice(0, 30), dockerKali: dockerReady() };
+
+      if (fres.findings.length) result.findings.push({ type: 'FUZZ', summary: `${fres.findings.length} rutas interesantes (${fres.tool})`, severity: 'info' });
       break;
     }
 
@@ -185,4 +247,4 @@ async function runFullPipeline(ctx, target) {
   };
 }
 
-module.exports = { PHASES, getPhases, runPhase, runFullPipeline };
+module.exports = { PHASES, getPhases, runPhase, runFullPipeline, dockerReady, dockerExec };

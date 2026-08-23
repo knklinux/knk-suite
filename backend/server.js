@@ -288,9 +288,23 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =========================================================================
-  // API: Notas
+  // API: Herramientas / Docker Kali
   // =========================================================================
-  if (u.pathname === '/api/notes' && req.method === 'POST') {
+  if (u.pathname === '/api/tools') {
+    const dockerOk = require('./lib/docker').ensureRunning();
+    let dockerTools = [];
+    if (dockerOk) {
+      try {
+        const r = require('./lib/docker').exec('bash', '-c "which nmap nuclei ffuf subfinder amass sqlmap 2>/dev/null | tr \"\\n\" \" \""', { timeoutMs: 10000 });
+        if (r.ok) dockerTools = r.output.trim().split(/\s+/).filter(Boolean).map(t => t.split('/').pop());
+      } catch { /* no docker */ }
+    }
+    return sendJSON(res, 200, {
+      dockerKali: dockerOk,
+      dockerTools,
+      nativeTools: ['node', 'ollama'].filter(() => true),
+    });
+  }
     const body = await readJSON(req);
     const s = sessionMod.load(SESSION_FILE);
     sessionMod.addNote(s, body.text || '');
