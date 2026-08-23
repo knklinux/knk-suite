@@ -182,7 +182,20 @@ const server = http.createServer(async (req, res) => {
     const url = body.url;
     if (!url) return sendJSON(res, 400, { ok: false, error: 'URL del programa requerida' });
 
-    const parsed = await programParser.parseProgram(url);
+    const parsed = await programParser.parseProgram(url).catch(err => {
+      return { error: 'Error al analizar programa: ' + (err.message || 'timeout'), source: programParser.detectPlatform(url) };
+    });
+    if (parsed.error && parsed.source === 'hackerone') {
+      // HackerOne: modo guiado aunque el fetch falle
+      const hoGuided = programParser.parseHackerOne(url);
+      parsed.source = hoGuided.source;
+      parsed.autoParsed = false;
+      parsed.programName = hoGuided.programName;
+      parsed.note = hoGuided.note;
+      parsed.domains = [];
+      parsed.policy = hoGuided.policy;
+      parsed.error = null;
+    }
     if (parsed.error) return sendJSON(res, 400, { ok: false, error: parsed.error });
 
     // Auto-fill session
@@ -225,7 +238,9 @@ const server = http.createServer(async (req, res) => {
       setPhase: (id, data) => sessionMod.setPhase(s, id, data),
     };
 
-    const result = await pipeline.runPhase(ctx, phaseId, body);
+    const result = await pipeline.runPhase(ctx, phaseId, body).catch(err => {
+      return { phase: body.phase || phaseId, ok: false, error: err.message || 'Error en la fase', output: null, findings: [] };
+    });
     return sendJSON(res, 200, result);
   }
 
