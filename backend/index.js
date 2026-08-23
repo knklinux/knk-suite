@@ -54,8 +54,20 @@ function getSession() {
 // ── API Routes ──────────────────────────────────────
 
 // Status
-app.get('/api/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
   const s = getSession();
+  // Check public IP (for VPN verification)
+  let publicIP = null;
+  try {
+    const https = require('https');
+    publicIP = await new Promise((resolve) => {
+      https.get('https://ifconfig.me', { timeout: 3000 }, (r) => {
+        let d = '';
+        r.on('data', c => d += c);
+        r.on('end', () => resolve(d.trim()));
+      }).on('error', () => resolve(null));
+    });
+  } catch {}
   res.json({
     ok: true,
     session: {
@@ -67,6 +79,7 @@ app.get('/api/status', (req, res) => {
     },
     docker: docker.ensureRunning(),
     tools: ['nmap', 'ffuf', 'nuclei', 'subfinder', 'sqlmap', 'whatweb', 'dirb'],
+    network: { publicIP },
   });
 });
 
