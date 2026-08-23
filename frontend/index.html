@@ -68,6 +68,7 @@
       <button data-view="gates">✅ Compuertas</button>
       <button data-view="reportes">📝 Reportes</button>
       <button data-view="chat">💬 Chat LLM</button>
+      <button data-view="compliance">📜 Compliance</button>
     </nav>
     <div class="status">
       <span class="dot" id="llm-dot"></span><span id="llm-status">LLM: ...</span><br>
@@ -203,54 +204,43 @@ async function renderOpplan() {
 }
 
 async function renderPipeline() {
-  let html = '<h2>🚀 Pipeline</h2>';
-
-  const phases = [
-    { id: 'recon', name: '🔍 RECON', desc: 'Subdominios, wayback, tecnologías' },
-    { id: 'scan', name: '🛡️ SCAN', desc: 'Headers seguridad, CORS, CVEs' },
-    { id: 'fuzz', name: '🚀 FUZZ', desc: 'Directorios y archivos ocultos' },
+  const s = await api('/session');
+  const phases = s.phases || {};
+  const allPhases = [
+    { id: 'plan', icon: '📋', name: 'PLAN', desc: 'OPPLAN: scope, RoE, límites' },
+    { id: 'recon', icon: '🔍', name: 'RECON', desc: 'Subdominios, wayback, tecnologías' },
+    { id: 'scan', icon: '🛡️', name: 'SCAN', desc: 'Headers, CORS, CVEs, nuclei' },
+    { id: 'fuzz', icon: '🚀', name: 'FUZZ', desc: 'Directorios ocultos (stealth)' },
+    { id: 'exploit', icon: '✅', name: 'EXPLOIT', desc: 'Validar con compuertas' },
+    { id: 'reporte', icon: '📝', name: 'REPORTE', desc: 'Generar reporte final' },
+    { id: 'verificar', icon: '🔎', name: 'VERIFICAR', desc: 'Triager automático' },
   ];
 
-  // Pipeline completo
-  html += '<div class="card" style="margin-bottom:16px"><h3>▶ Pipeline rápido (recon + scan + fuzz)</h3>';
-  html += '<button class="btn" onclick="runFullPipeline()">Ejecutar pipeline completo</button>';
+  let html = '<h2>🚀 Pipeline automático</h2>';
+
+  // Botón único de pipeline completo
+  html += '<div class="card" style="margin-bottom:16px">';
+  html += '<h3>▶ Pipeline completo — 7 fases</h3>';
+  html += '<span class="muted">Un solo click: PLAN → RECON → SCAN → FUZZ → EXPLOIT → REPORTE → VERIFICAR</span><br><br>';
+  html += '<button class="btn" onclick="runFullPipeline()" id="btn-full-pipeline">🚀 Ejecutar pipeline completo</button>';
   html += '<span class="muted" style="margin-left:10px" id="pipeline-status"></span>';
   html += '</div>';
 
-  // Fases individuales
-  html += '<div class="grid">';
-  for (const p of phases) {
-    html += '<div class="card"><h3>' + p.name + '</h3>';
-    html += `<span class="muted">${p.desc}</span><br><br>`;
-    html += `<button class="btn btn-sm" onclick="runPhase('${p.id}')">Ejecutar</button>`;
-    html += `<div id="out-${p.id}" style="margin-top:10px"></div>`;
-    html += '</div>';
+  // Progreso visual en tiempo real
+  html += '<div class="card" id="pipeline-progress" style="display:none"><h3>Progreso</h3>';
+  for (const p of allPhases) {
+    const done = phases[p.id]?.done;
+    html += `<div class="pipeline-phase" id="pp-${p.id}">`;
+    html += `<div class="phase-num pending" id="pp-num-${p.id}">${allPhases.indexOf(p)+1}</div>`;
+    html += `<div style="flex:1;font-size:12px">${p.icon} <strong>${p.name}</strong> <span class="muted">${p.desc}</span>`;
+    html += `<span id="pp-out-${p.id}" style="display:block;font-size:11px;color:var(--muted);margin-top:2px"></span></div>`;
+    if (done) html += `<span class="badge badge-ok">✅</span>`;
+    html += `</div>`;
   }
   html += '</div>';
 
-  // Exploit gates
-  html += '<div class="card"><h3>✅ Compuertas (EXPLOIT)</h3>';
-  html += '<span class="muted">Valida candidatos manualmente con las compuertas en la pestaña dedicada.</span>';
-  html += '</div>';
-
-  // Reporte
-  html += '<div class="card" style="margin-top:16px"><h3>📝 Reporte (con evidencia)</h3>';
-  html += `<input id="rep-title" placeholder="Título del reporte (ej: CORS Misconfiguration en api.target.com)">`;
-  html += `<input id="rep-program" placeholder="Nombre del programa">`;
-  html += `<input id="rep-asset" placeholder="Asset/endpoint vulnerable">`;
-  html += `<input id="rep-type" placeholder="Tipo de bug (CORS, IDOR, XSS, SSRF...)">`;
-  html += `<input id="rep-cwe" placeholder="CWE (ej: CWE-942)">`;
-  html += `<input id="rep-cvss" placeholder="CVSS (ej: 6.5)">`;
-  html += `<select id="rep-sev" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font:inherit;font-size:13px;width:100%;margin-bottom:10px"><option>low</option><option selected>medium</option><option>high</option><option>critical</option></select>`;
-  html += `<input id="rep-impact" placeholder="Impacto (una frase concreta)">`;
-  html += `<input id="rep-remediation" placeholder="Remediation sugerida">`;
-  html += `<textarea id="rep-steps" placeholder="Pasos de reproducción (separados por | )" rows="3"></textarea>`;
-  html += `<input id="rep-sspath" placeholder="Ruta de los screenshots">`;
-  html += `<input id="rep-rrpath" placeholder="Ruta del request/response">`;
-  html += '<button class="btn btn-sm" onclick="generateReport()" style="margin-right:8px">Generar reporte</button>';
-  html += '<button class="btn btn-sm btn-outline" onclick="verifyReport()">Verificar reporte</button>';
-  html += '<div id="out-reporte" style="margin-top:10px"></div>';
-  html += '</div>';
+  // Resultados
+  html += '<div id="pipeline-results" style="margin-top:16px"></div>';
 
   return html;
 }
@@ -351,11 +341,31 @@ async function renderChat() {
   html += '<div id="chat-history" style="max-height:400px;overflow:auto;margin-bottom:12px"></div>';
   html += '<textarea id="chat-input" placeholder="Pregunta al LLM..." rows="2" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>';
   html += '<button class="btn btn-sm" onclick="sendChat()">Enviar</button>';
-  html += '</div>';
-  return html;
+  html += '</div>';  return html;
+}
+
+async function renderCompliance() {
+  let c;
+  try { c = await api('/compliance'); } catch { return '<div class="card"><span class="muted">Compliance no disponible</span></div>'; }
+  if (!c || !c.rules) return '<div class="card"><span class="muted">Reglas no cargadas</span></div>';
+  const r = c.rules;
+  let h = '<h2>📜 Compliance — YesWeHack Hunter Rules</h2><div class="card">';
+  h += '<h4 style="color:var(--green);">🪪 User-Agent</h4><p style="font-size:12px">' + r.userAgent.description + '</p>';
+  h += '<p style="font-size:11px;color:var(--primary)"><code>' + r.userAgent.example + '</code></p>';
+  h += '<p class="danger" style="font-size:12px">⚠️ ' + r.userAgent.consequence + '</p>';
+  h += '<h4 style="color:var(--green);margin-top:14px">🤖 Escaneo automático</h4>';
+  h += '<p class="danger" style="font-size:12px">🚫 ' + r.automatedScanning.prohibited + '</p>';
+  h += '<p style="font-size:12px">✅ ' + r.automatedScanning.allowed + '</p>';
+  h += '<h4 style="color:var(--green);margin-top:14px">🛑 DoS</h4><p class="danger" style="font-size:12px">🚫 ' + r.denialOfService.prohibited + '</p>';
+  h += '<h4 style="color:var(--green);margin-top:14px">📢 Divulgación</h4><p style="font-size:12px"><strong>' + r.disclosure.policy + '</strong>: ' + r.disclosure.rule + '</p>';
+  h += '<h4 style="color:var(--green);margin-top:14px">🎯 Scope</h4><p class="danger" style="font-size:12px">' + r.scope.rule + '</p>';
+  h += '<p style="font-size:12px">' + r.scope.outOfScopeNote + '</p>';
+  h += '</div>';
+  return h;
 }
 
 // ============ ACTIONS ============
+
 
 window.autoParseProgram = async function() {
   const url = document.getElementById('quick-program-url').value.trim();
@@ -409,22 +419,39 @@ window.approveOpplan = async function() {
 };
 
 window.runPhase = async function(phaseId) {
-  document.getElementById('out-' + phaseId).innerHTML = '<span class="muted">Ejecutando...</span>';
-  const r = await api('/pipeline/run', { method: 'POST', body: JSON.stringify({ phase: phaseId }) });
-  document.getElementById('out-' + phaseId).innerHTML = '<pre class="pre">' + JSON.stringify(r, null, 2) + '</pre>';
-  if (r.ok) toast('✅ ' + phaseId + ' completado');
-  else toast('⛔ ' + (r.error || 'Error'));
-  loadStatus();
+  return await api('/pipeline/run', { method: 'POST', body: JSON.stringify({ phase: phaseId }) });
 };
 
 window.runFullPipeline = async function() {
-  document.getElementById('pipeline-status').textContent = 'Ejecutando...';
-  const r = await api('/pipeline/full', { method: 'POST', body: JSON.stringify({}) });
-  document.getElementById('pipeline-status').textContent = r.completed + '/' + r.total + ' fases completadas';
-  if (r.completed === r.total) toast('✅ Pipeline completo');
-  else toast('⚠️ Pipeline parcial');
+  const btn = document.getElementById('btn-full-pipeline');
+  btn.disabled = true;
+  btn.textContent = '⏳ Ejecutando...';
+  document.getElementById('pipeline-progress').style.display = 'block';
+  document.getElementById('pipeline-status').textContent = 'Iniciando pipeline...';
+
+  const phases = ['plan','recon','scan','fuzz','exploit','reporte','verificar'];
+  const emoji = { plan:'📋', recon:'🔍', scan:'🛡️', fuzz:'🚀', exploit:'✅', reporte:'📝', verificar:'🔎' };
+
+  for (const phaseId of phases) {
+    const numEl = document.getElementById('pp-num-' + phaseId);
+    const outEl = document.getElementById('pp-out-' + phaseId);
+    if (numEl) numEl.className = 'phase-num active';
+    if (outEl) outEl.textContent = 'Ejecutando...';
+    document.getElementById('pipeline-status').textContent = emoji[phaseId] + ' ' + phaseId.toUpperCase() + '...';
+
+    const r = await runPhase(phaseId);
+    if (numEl) numEl.className = r.ok ? 'phase-num done' : 'phase-num pending';
+    if (numEl && r.ok) numEl.textContent = '✓';
+    if (outEl) outEl.textContent = r.ok
+      ? (r.output?.tool || r.output?.subdominios ? (r.output.totalSubs || '') + ' resultados' : 'completado')
+      : (r.error || 'pendiente');
+  }
+
+  document.getElementById('pipeline-status').textContent = '✅ Pipeline completo';
+  btn.textContent = '🚀 Ejecutar pipeline completo';
+  btn.disabled = false;
+  toast('✅ Pipeline completo');
   loadStatus();
-  await navigateTo('dashboard');
 };
 
 window.validateGate = async function(type) {
@@ -512,6 +539,7 @@ async function navigateTo(view) {
     case 'gates': html = await renderGates(); break;
     case 'reportes': html = await renderReportes(); break;
     case 'chat': html = await renderChat(); break;
+    case 'compliance': html = await renderCompliance(); break;
   }
   document.getElementById('main-content').innerHTML = html;
 }

@@ -1,0 +1,45 @@
+{
+  "source": "YesWeHack — Global Hunter Terms (extracted from program pages)",
+  "version": "2026-08",
+  "rules": {
+    "userAgent": {
+      "required": true,
+      "description": "Todo hunter debe usar un User-Agent que incluya 'bug-bounty-HunterName'. Reemplaza HunterName por tu alias.",
+      "example": "knk-suite-researcher/2.0 bug-bounty-HunterName",
+      "consequence": "Sin este UA, los equipos de seguridad pueden bloquearte de sus activos."
+    },
+    "automatedScanning": {
+      "prohibited": "No usar escáneres automáticos o herramientas que generen gran cantidad de tráfico de red",
+      "allowed": "Herramientas manuales, requests individuales con rate limiting respetuoso",
+      "rateLimitAdvice": "Mínimo 1-2 segundos entre requests. Si el programa lo especifica, respeta su límite exacto."
+    },
+    "denialOfService": {
+      "prohibited": "Ataques de DoS en aplicaciones, servidores, redes o infraestructura están estrictamente prohibidos",
+      "degradation": "Evitar pruebas que puedan causar degradación o interrupción del servicio"
+    },
+    "disclosure": {
+      "policy": "Coordinated Vulnerability Disclosure",
+      "rule": "No se permite ninguna divulgación de vulnerabilidades, total, parcial o de otro tipo, sin coordinación con el programa",
+      "publication": "Todos los hallazgos aceptados se publican de forma transparente. El reporter es acreditado si acepta."
+    },
+    "reportingRequirements": {
+      "mandatory": [
+        "Descripción textual clara de la vulnerabilidad y cómo se explota",
+        "Impacto de seguridad real en la aplicación, sus usuarios y la organización",
+        "Prueba de explotación: screenshots mostrando el exploit ejecutado y el impacto final",
+        "Pasos completos para reproducir el exploit (código, payloads, comandos)",
+        "CVSS 3.1 con evaluación honesta del impacto"
+      ],
+      "poc": "El PoC debe incluir request/response HTTP reproducible (curl copiable por el triager)"
+    },
+    "scope": {
+      "rule": "SOLO hacer testing en assets listados en la sección 'Scopes' del programa. Cualquier dominio no listado está fuera de scope.",
+      "outOfScopeNote": "Los dominios en 'Out of scopes' no deben tocarse bajo ninguna circunstancia."
+    },
+    "eligibility": {
+      "firstReporter": "Debes ser el primer reporter de una vulnerabilidad para recibir recompensa",
+      "noEmployees": "No puedes ser empleado actual o anterior de la organización ni de sus contratistas",
+      "validReport": "La vulnerabilidad debe ser una vulnerabilidad cualificada según el programa"
+    }
+  }
+}

@@ -228,14 +228,19 @@ async function runPhase(ctx, phaseId, params = {}) {
  * Ejecuta el pipeline completo secuencialmente.
  * Se detiene en cada fase si no está aprobada (modo human-in-the-loop desde API).
  */
-async function runFullPipeline(ctx, target) {
+async function runFullPipeline(ctx, target, opts = {}) {
   const results = [];
-  const phases = ['plan', 'recon', 'scan', 'fuzz'];
+  // Las 7 fases en orden — solo se detiene si una fase crítica falla
+  const phases = ['plan', 'recon', 'scan', 'fuzz', 'exploit', 'reporte', 'verificar'];
 
   for (const phaseId of phases) {
-    const res = await runPhase(ctx, phaseId, { target });
+    const res = await runPhase(ctx, phaseId, { target, ...opts });
     results.push(res);
-    if (!res.ok) break;
+    ctx.setPhase(phaseId, { done: res.ok, result: res });
+    ctx.save();
+    // Solo detenerse si falla el plan (sin OPPLAN no seguimos)
+    // El resto de fases continúan aunque fallen (recon puede fallar, scan sigue)
+    if (!res.ok && phaseId === 'plan') break;
   }
 
   return {

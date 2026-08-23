@@ -218,6 +218,18 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =========================================================================
+  // API: Cumplimiento / Compliance
+  // =========================================================================
+  if (u.pathname === '/api/compliance') {
+    const fs = require('fs');
+    const path = require('path');
+    try {
+      const ywh = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'compliance-ywh.json'), 'utf8'));
+      return sendJSON(res, 200, ywh);
+    } catch { return sendJSON(res, 500, { error: 'No se pudo cargar compliance' }); }
+  }
+
+  // =========================================================================
   // API: Pipeline (ejecutar fase)
   // =========================================================================
   if (u.pathname === '/api/pipeline/phases') {
