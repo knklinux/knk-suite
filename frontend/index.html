@@ -356,22 +356,71 @@ async function renderChat() {
 }
 
 async function renderCompliance() {
-  let c;
-  try { c = await api('/compliance'); } catch { return '<div class="card"><span class="muted">Compliance no disponible</span></div>'; }
-  if (!c || !c.rules) return '<div class="card"><span class="muted">Reglas no cargadas</span></div>';
-  const r = c.rules;
-  let h = '<h2>📜 Compliance — YesWeHack Hunter Rules</h2><div class="card">';
-  h += '<h4 style="color:var(--green);">🪪 User-Agent</h4><p style="font-size:12px">' + r.userAgent.description + '</p>';
-  h += '<p style="font-size:11px;color:var(--primary)"><code>' + r.userAgent.example + '</code></p>';
-  h += '<p class="danger" style="font-size:12px">⚠️ ' + r.userAgent.consequence + '</p>';
-  h += '<h4 style="color:var(--green);margin-top:14px">🤖 Escaneo automático</h4>';
-  h += '<p class="danger" style="font-size:12px">🚫 ' + r.automatedScanning.prohibited + '</p>';
-  h += '<p style="font-size:12px">✅ ' + r.automatedScanning.allowed + '</p>';
-  h += '<h4 style="color:var(--green);margin-top:14px">🛑 DoS</h4><p class="danger" style="font-size:12px">🚫 ' + r.denialOfService.prohibited + '</p>';
-  h += '<h4 style="color:var(--green);margin-top:14px">📢 Divulgación</h4><p style="font-size:12px"><strong>' + r.disclosure.policy + '</strong>: ' + r.disclosure.rule + '</p>';
-  h += '<h4 style="color:var(--green);margin-top:14px">🎯 Scope</h4><p class="danger" style="font-size:12px">' + r.scope.rule + '</p>';
-  h += '<p style="font-size:12px">' + r.scope.outOfScopeNote + '</p>';
-  h += '</div>';
+  let h = '<h2>📜 Compliance — Auditoría de la suite</h2>';
+
+  // Estado actual de la suite vs políticas
+  h += '<div class="card"><h3>🔍 Qué hace la suite vs qué permiten las políticas</h3>';
+  h += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+  h += '<tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px;color:var(--muted)">Acción</th><th style="padding:6px;color:var(--muted)">Suite</th><th style="padding:6px;color:var(--muted)">YesWeHack</th><th style="padding:6px;color:var(--muted)">HackerOne</th></tr>';
+  const rows = [
+    ['User-Agent personalizado', '✅', '✅ Obligatorio', '✅ Recomendado'],
+    ['Scope enforcement (inScope)', '✅', '✅ Obligatorio', '✅ Obligatorio'],
+    ['Rate limiting (1.5s + jitter)', '✅', '✅ Mínimo 1-2s', '✅ Mínimo 1-2s'],
+    ['Max 30 req/min + cooldown', '✅', '✅', '✅'],
+    ['RECON: subfinder (passive DNS)', '✅', '✅ Permitido (passive)', '✅ Permitido (passive)'],
+    ['SCAN: 1 petición headers/CORS', '✅', '✅ Manual = OK', '✅ Manual = OK'],
+    ['FUZZ: 15 paths (2-4s delay)', '⚠️', '🚫 Prohibido auto', '🚫 Prohibido auto'],
+    ['Nuclei (vuln scan)', '❌ Desactivado', '🚫 Prohibido', '🚫 Prohibido'],
+    ['OPPLAN + autorización', '✅', '✅ Recomendado', '✅ Recomendado'],
+    ['Screenshots + curl obligatorio', '✅', '✅ Requerido', '✅ Requerido'],
+    ['Coordinated disclosure', '✅', '✅ Requerido', '✅ Requerido'],
+  ];
+  rows.forEach(r => {
+    const color = r[1]==='✅'?'var(--green)':r[1]==='⚠️'?'var(--yellow)':'var(--red)';
+    h += `<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px">${r[0]}</td><td style="padding:6px;text-align:center;color:${color}">${r[1]}</td><td style="padding:6px;text-align:center;font-size:11px">${r[2]}</td><td style="padding:6px;text-align:center;font-size:11px">${r[3]}</td></tr>`;
+  });
+  h += '</table></div>';
+
+  // Advertencia crítica
+  h += '<div class="card" style="margin-top:12px;border-color:var(--red)"><h3 style="color:var(--red)">⚠️ ADVERTENCIA CRÍTICA</h3>';
+  h += '<p style="font-size:12px"><strong>El FUZZ automático del pipeline viola las políticas de ambos programas.</strong></p>';
+  h += '<p style="font-size:12px;margin-top:8px">YesWeHack y HackerOne prohíben "escáneres automáticos o herramientas que generen gran cantidad de tráfico de red".</p>';
+  h += '<p style="font-size:12px;margin-top:8px"><strong>Cómo evitarlo:</strong></p>';
+  h += '<ul style="font-size:12px;padding-left:20px">';
+  h += '<li>El RECON pasivo (subfinder) es aceptable — consulta bases de datos externas, no al target</li>';
+  h += '<li>El SCAN (1 petición) equivale a testing manual — OK</li>';
+  h += '<li>El FUZZ (15 paths) es el problema — <strong>desactívalo si el programa lo prohíbe</strong></li>';
+  h += '<li>Para fuzzing seguro: hazlo manualmente desde el navegador (DevTools → Network)</li>';
+  h += '<li>O pide autorización explícita al programa para testing automatizado</li>';
+  h += '</ul></div>';
+
+  // Checklist pre-envío
+  h += '<div class="card" style="margin-top:12px"><h3>✅ Checklist antes de enviar reporte</h3>';
+  h += '<div style="font-size:12px">';
+  [
+    '¿Está dentro del scope documentado del programa?',
+    '¿Usaste el User-Agent correcto (bug-bounty-TuNombre)?',
+    '¿Respetaste el rate limit del programa?',
+    '¿Tienes screenshot del exploit ejecutándose?',
+    '¿Tienes screenshot del impacto (datos expuestos)?',
+    '¿Tienes curl reproducible (request/response)?',
+    '¿Reprodujiste el PoC al menos 2 veces?',
+    '¿El CVSS es honesto (no inflado)?',
+    '¿No hay PII real (solo cuentas de prueba)?',
+    '¿Es la primera vez que reportas esta vulnerabilidad?',
+  ].forEach(item => {
+    h += '<div style="padding:4px 0"><input type="checkbox" style="width:auto;margin-right:8px">' + item + '</div>';
+  });
+  h += '</div></div>';
+
+  // Referencia rápida
+  h += '<div class="card" style="margin-top:12px"><h3>📋 Referencia rápida</h3>';
+  h += '<div style="font-size:12px">';
+  h += '<p><strong>YesWeHack:</strong> <a href="https://yeswehack.com/terms-of-service" target="_blank" style="color:var(--primary)">Términos de servicio</a></p>';
+  h += '<p><strong>HackerOne:</strong> <a href="https://hackerone.com/policy/accepted-use" target="_blank" style="color:var(--primary)">Accepted Use Policy</a></p>';
+  h += '<p style="margin-top:8px"><strong>Regla de oro:</strong> Si no estás seguro, NO lo hagas. Pregunta al programa antes.</p>';
+  h += '</div></div>';
+
   return h;
 }
 
