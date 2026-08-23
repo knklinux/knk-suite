@@ -442,16 +442,86 @@ window.runFullPipeline = async function() {
     const r = await runPhase(phaseId);
     if (numEl) numEl.className = r.ok ? 'phase-num done' : 'phase-num pending';
     if (numEl && r.ok) numEl.textContent = '✓';
-    if (outEl) outEl.textContent = r.ok
-      ? (r.output?.tool || r.output?.subdominios ? (r.output.totalSubs || '') + ' resultados' : 'completado')
-      : (r.error || 'pendiente');
+    if (outEl && r.ok) {
+      const o = r.output || {};
+      const summary = phaseId === 'plan' ? (o.draft ? 'borrador' : 'OPPLAN aprobado')
+        : phaseId === 'recon' ? (o.totalSubs || 0) + ' subdominios, ' + (o.totalUrls || 0) + ' URLs, tech: ' + (o.tecnologias||[]).slice(0,3).join(', ')
+        : phaseId === 'scan' ? (o.headersAusentes?.length || 0) + ' headers ausentes, CORS: ' + (o.cors?.suspicious ? 'sospechoso' : 'ok')
+        : phaseId === 'fuzz' ? (o.mode === 'stealth' ? 'stealth (15 paths)' : (o.findings?.length || 0) + ' rutas')
+        : phaseId === 'exploit' ? 'usa compuertas para validar'
+        : phaseId === 'reporte' ? (o.draft ? 'borrador generado ⚠️' : 'generado')
+        : phaseId === 'verificar' ? (o.verdict || 'completado') + ' (' + (o.score || 0) + '/100)'
+        : 'completado';
+      outEl.textContent = summary;
+    } else if (outEl) {
+      outEl.textContent = r.error || 'pendiente';
+    }
   }
 
   document.getElementById('pipeline-status').textContent = '✅ Pipeline completo';
   btn.textContent = '🚀 Ejecutar pipeline completo';
   btn.disabled = false;
   toast('✅ Pipeline completo');
-  loadStatus();
+
+  // Mostrar resumen completo con hallazgos y reporte
+  const s = await api('/session');
+  const resultsDiv = document.getElementById('pipeline-results');
+  let html = '<div class="card"><h3>📊 Resumen del pipeline</h3>';
+  html += `<div class="kv"><span class="k">Objetivo</span><span class="v">${s.target || '—'}</span></div>`;
+  html += `<div class="kv"><span class="k">Hallazgos</span><span class="v">${s.findings.length}</span></div>`;
+  html += `<div class="kv"><span class="k">Programa</span><span class="v">${s.artifacts?.programName || '—'}</span></div>`;
+  html += `<div class="kv"><span class="k">OPPLAN</span><span class="v"><span class="badge ${s.opplan?.status==='aprobado'?'badge-ok':'badge-warn'}">${s.opplan?.status || 'sin OPPLAN'}</span></span></div>`;
+  html += '</div>';
+
+  // Hallazgos detallados
+  if (s.findings.length) {
+    html += '<div class="card" style="margin-top:12px"><h3>🐞 Hallazgos</h3>';
+    s.findings.forEach((f, i) => {
+      const sevClass = f.severity==='critical'||f.severity==='high' ? 'badge-err' : f.severity==='medium' ? 'badge-warn' : 'badge-ok';
+      html += '<div class="finding">';
+      html += `<span class="f-type">[${f.type}]</span>`;
+      html += `<span class="f-sum">${f.summary}</span>`;
+      html += `<span class="f-sev"><span class="badge ${sevClass}">${f.severity||'info'}</span></span>`;
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Reporte
+  const rep = s.artifacts?.ultimo_reporte;
+  if (rep) {
+    html += '<div class="card" style="margin-top:12px"><h3>📝 Reporte borrador</h3>';
+    html += `<div class="kv"><span class="k">Título</span><span class="v">${rep.titulo}</span></div>`;
+    html += `<div class="kv"><span class="k">Asset</span><span class="v">${rep.asset}</span></div>`;
+    html += `<div class="kv"><span class="k">Programa</span><span class="v">${rep.programa}</span></div>`;
+    html += `<div class="kv"><span class="k">Reproducible</span><span class="v">${rep.reproducible}×</span></div>`;
+    html += `<div class="kv"><span class="k">Screenshots</span><span class="v">${rep.screenshotsPath || 'pendiente'}</span></div>`;
+    html += `<div class="kv"><span class="k">Curl</span><span class="v">${rep.requestResponsePath || 'pendiente'}</span></div>`;
+    html += `<div class="kv"><span class="k">Pasos</span><span class="v">${rep.pasos?.length || 0}</span></div>`;
+    html += '<p class="muted" style="margin-top:8px">⚠️ Añade screenshots y curl reproducible antes de enviar</p>';
+    html += '</div>';
+  }
+
+  // Verificar
+  const verPhase = s.phases?.verificar?.result;
+  if (verPhase?.output) {
+    html += '<div class="card" style="margin-top:12px"><h3>🔎 Verificación (triager)</h3>';
+    html += `<div class="kv"><span class="k">Veredicto</span><span class="v"><span class="badge ${verPhase.output.verdict==='LISTO'?'badge-ok':verPhase.output.verdict==='REVISAR'?'badge-warn':'badge-err'}">${verPhase.output.verdict}</span></span></div>`;
+    html += `<div class="kv"><span class="k">Score</span><span class="v">${verPhase.output.score}/100</span></div>`;
+    if (verPhase.output.problems?.length) {
+      html += '<div style="margin-top:8px;font-size:12px">';
+      verPhase.output.problems.forEach(p => html += `<div class="danger">⛔ ${p}</div>`);
+      html += '</div>';
+    }
+    if (verPhase.output.warnings?.length) {
+      html += '<div style="margin-top:4px;font-size:12px">';
+      verPhase.output.warnings.forEach(w => html += `<div style="color:var(--yellow)">⚠️ ${w}</div>`);
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  resultsDiv.innerHTML = html;
 };
 
 window.validateGate = async function(type) {
