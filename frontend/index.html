@@ -353,31 +353,30 @@ async function renderChat() {
 
 window.autoParseProgram = async function() {
   const url = document.getElementById('quick-program-url').value.trim();
-  if (!url) return toast('Pega la URL del programa de YesWeHack');
+  if (!url) return toast('Pega la URL del programa');
   toast('🔍 Analizando programa...');
   const r = await api('/parse-program', { method: 'POST', body: JSON.stringify({ url }) });
   if (!r.ok) return toast('❌ ' + (r.error || 'Error al parsear'));
   const p = r.parsed;
-  toast('✅ Programa: ' + p.programName + ' | ' + p.domains.length + ' dominios | UA: ' + (p.userAgent ? 'configurado' : 'default') + ' | Rate: ' + p.rateLimit + 'ms');
-  // Fill fields
+  if (p.note) toast('⚠️  ' + p.note.slice(0, 120));
+  else toast('✅ ' + p.programName + ' | ' + p.domains.length + ' dominios | UA: ' + (p.userAgent ? 'OK' : 'default'));
+  // Fill fields in-place (NO redirect — preserves the form)
   document.getElementById('quick-target').value = p.target;
   document.getElementById('quick-scope').value = p.domains.join(', ');
   document.getElementById('quick-ua').value = p.userAgent;
   document.getElementById('quick-program-url').value = p.programUrl;
-  await navigateTo('dashboard');
 };
 
 window.quickSetup = async function() {
   const target = document.getElementById('quick-target').value.trim();
   const scope = document.getElementById('quick-scope').value.trim();
   const userAgent = document.getElementById('quick-ua').value.trim();
-  const programUrl = document.getElementById('quick-program').value.trim();
-  const rateLimitMs = parseInt(document.getElementById('quick-ratelimit').value) || 500;
+  const programUrl = document.getElementById('quick-program-url').value.trim();
   if (!target) return toast('Define el objetivo');
   if (!scope) return toast('Define el scope — sin scope documentado no se puede auditar');
-  await api('/target', { method: 'POST', body: JSON.stringify({ target, scope, userAgent, programUrl, rateLimitMs }) });
-  toast('✅ Objetivo fijado | Scope: ' + scope + ' | UA personalizado: ' + (userAgent ? 'SI' : 'default'));
-  await navigateTo('dashboard');
+  const r = await api('/target', { method: 'POST', body: JSON.stringify({ target, scope, userAgent, programUrl, rateLimitMs: 2000 }) });
+  if (r.ok) toast('✅ Objetivo fijado | Scope: ' + scope + ' | UA: ' + (userAgent ? 'SI' : 'default'));
+  else toast('❌ Error al fijar');
 };
 
 window.saveOpplan = async function() {

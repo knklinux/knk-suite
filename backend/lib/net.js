@@ -18,13 +18,33 @@ let _customUA = null;
 function setUA(ua) { _customUA = ua; }
 function getUA() { return _customUA || DEFAULT_UA; }
 
-// ── Rate limiter global ─────────────────────────────
-let _minDelayMs = 500; // default 2 req/s
-function setRateLimit(delayMs) { _minDelayMs = delayMs; }
+// ── Rate limiter global (stealth con jitter aleatorio) ──
+let _minDelayMs = 1500; // default 1.5s entre requests (anti-DoS)
+let _stealthMode = true; // añade jitter aleatorio
+let _maxBatch = 30; // máximo de requests por ráfaga
+function setRateLimit(delayMs) { _minDelayMs = Math.max(800, delayMs); }
+function setStealth(on) { _stealthMode = !!on; }
+function setMaxBatch(n) { _maxBatch = n; }
 let _lastRequest = 0;
+let _batchCount = 0;
+let _batchStart = 0;
 async function _throttle() {
+  const now = Date.now();
+  // Reset batch counter every 60s
+  if (now - _batchStart > 60000) { _batchStart = now; _batchCount = 0; }
+  _batchCount++;
+  // Hard limit: no más de maxBatch requests por minuto
+  if (_batchCount > _maxBatch) {
+    const pauseMs = 30000 + Math.random() * 15000; // 30-45s cooldown
+    await new Promise(r => setTimeout(r, pauseMs));
+    _batchStart = Date.now();
+    _batchCount = 0;
+  }
+  // Jitter: añade 10-35% de variación aleatoria
+  let delay = _minDelayMs;
+  if (_stealthMode) delay += Math.floor(delay * (0.1 + Math.random() * 0.25));
   const elapsed = Date.now() - _lastRequest;
-  if (elapsed < _minDelayMs) await new Promise(r => setTimeout(r, _minDelayMs - elapsed));
+  if (elapsed < delay) await new Promise(r => setTimeout(r, delay - elapsed));
   _lastRequest = Date.now();
 }
 
@@ -121,7 +141,7 @@ function qs(v) { return encodeURIComponent(v); }
 
 module.exports = {
   fetch, getJson, getText, normalizeHost, qs,
-  setUA, getUA, setRateLimit, setScope, inScope,
+  setUA, getUA, setRateLimit, setStealth, setMaxBatch, setScope, inScope,
   setEvidenciaDir, getEvidenciaDir, saveEvidence,
   DEFAULT_UA, UA_SUFFIX,
 };

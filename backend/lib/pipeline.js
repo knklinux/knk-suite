@@ -146,25 +146,24 @@ async function runPhase(ctx, phaseId, params = {}) {
       const url = params.url || (session.target ? (session.target.includes('://') ? session.target : `https://${session.target}`) : null);
       if (!url) return { ...result, ok: false, error: 'Sin URL para fuzz.' };
 
-      let fres;
-      // Intentar ffuf via Docker Kali
-      if (dockerReady()) {
-        const base = String(url).replace(/\/+$/, '');
-        const wlFile = '/data/common.txt';
-        // Copiar wordlist al contenedor si hace falta
-        const ffufRes = dockerExec('ffuf', `-u ${base}/FUZZ -w ${wlFile} -mc 200,201,204,301,302,307,401,403,405,500 -t 10 -s`, 180000);
-        if (ffufRes.ok && ffufRes.output.trim()) {
-          const lines = ffufRes.output.trim().split('\n').filter(Boolean);
-          fres = { tool: 'ffuf (Docker)', baseline: 0, total: lines.length, findings: lines.map(l => ({ path: l, status: 0 })) };
-        }
+      // Stealth mode: sin ffuf automático, solo wordlist conservadora
+      const safeUrl = url.includes('://') ? url : `https://${url}`;
+      const isStealth = params.stealth !== false;
+      if (isStealth && dockerReady() && params.full !== true) {
+        // Recomendar no hacer fuzz masivo
+        result.output = {
+          warning: '⚠️  Fuzz masivo desactivado en modo stealth. Usa {full:true} solo con autorización explícita.',
+          mode: 'stealth',
+          maxPaths: 15,
+          concurrency: 1,
+          delayMin: 2000,
+        };
+        result.findings.push({ type: 'INFO', summary: 'Fuzz en modo stealth (15 paths máximo, 2-4s delay)', severity: 'info' });
+      } else {
+        const fres = await fuzzerMod.fuzz(safeUrl, { concurrency: 1, stealth: isStealth, tool: dockerReady() ? 'stealth-native' : 'native' });
+        result.output = { tool: fres.tool, baseline: fres.baseline, total: fres.total, findings: fres.findings.slice(0, 15), stealth: fres.stealth };
+        if (fres.findings.length) result.findings.push({ type: 'FUZZ', summary: `${fres.findings.length} rutas interesantes (${fres.tool})`, severity: 'info' });
       }
-      if (!fres) {
-        fres = await fuzzerMod.fuzz(url, { concurrency: 3, delayMs: 300, tool: dockerReady() ? 'native (Docker sin ffuf)' : 'native' });
-      }
-
-      result.output = { tool: fres.tool, baseline: fres.baseline, total: fres.total, findings: fres.findings.slice(0, 30), dockerKali: dockerReady() };
-
-      if (fres.findings.length) result.findings.push({ type: 'FUZZ', summary: `${fres.findings.length} rutas interesantes (${fres.tool})`, severity: 'info' });
       break;
     }
 
