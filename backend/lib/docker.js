@@ -35,19 +35,29 @@ function isRunning() {
 }
 
 function exec(tool, args, opts = {}) {
-  const timeout = opts.timeoutMs || 120000;
-  // Map tool names to Kali binary names
+  const timeout = Math.min(opts.timeoutMs || 30000, 30000); // Hard cap at 30s
   const toolMap = { httpx: 'httpx-toolkit' };
   const binary = toolMap[tool] || tool;
+  // Simple execSync with spawn-based timeout to avoid hangs
+  const dockerExecCmd = `docker exec ${CONTAINER} ${binary} ${args}`;
   const prefix = _dockerCmd();
-  const cmd = prefix
-    ? `${prefix} "docker exec ${CONTAINER} ${binary} ${args}"`
-    : `docker exec ${CONTAINER} ${binary} ${args}`;
+  const cmd = prefix ? `${prefix} "${dockerExecCmd}"` : dockerExecCmd;
   try {
-    const out = execSync(cmd, { encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'] });
+    const { spawnSync } = require('child_process');
+    const [shellCmd, ...shellArgs] = cmd.includes('sg ')
+      ? ['sg', 'docker', '-c', dockerExecCmd]
+      : ['/bin/sh', '-c', cmd];
+    const r = spawnSync(shellCmd, shellArgs, {
+      encoding: 'utf8',
+      timeout,
+      maxBuffer: 5 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const out = (r.stdout || '').trim();
+    if (r.error && !out) throw r.error;
     return { ok: true, output: out };
   } catch (e) {
-    return { ok: false, output: String(e.stdout || '') + String(e.stderr || ''), missing: false };
+    return { ok: false, output: String(e.stdout || '') + String(e.stderr || '').slice(0, 500), missing: false };
   }
 }
 

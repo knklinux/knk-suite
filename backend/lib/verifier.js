@@ -85,11 +85,13 @@ async function verifyReport(json, opts = {}) {
 
   let llm = null;
   if (opts.llm && typeof opts.llm.generate === 'function' && problems.length === 0) {
-    const r = await opts.llm.generate(
-      `Actúa como triager de bug bounty. Revisa este reporte y dime si tiene screenshots, request/response reproducible, y si el impacto está demostrado. Devuelve 3 observaciones concretas o "OK":\n${JSON.stringify(json)}`,
-      { system: 'Eres un triager exigente de HackerOne/Bugcrowd. Buscas: screenshots, curl reproducible, PoC claro, impacto real. Español. Breve.' }
-    );
-    if (r.ok) llm = r.text;
+    try {
+      const r = await opts.llm.generate(
+        `Actúa como triager de bug bounty. Revisa este reporte y dime si tiene screenshots, request/response reproducible, y si el impacto está demostrado. Devuelve 3 observaciones concretas o "OK":\n${JSON.stringify(json)}`,
+        { system: 'Eres un triager exigente. Buscas: screenshots, curl reproducible, PoC claro, impacto real. Español. Breve.' }
+      );
+      if (r.ok) llm = r.text;
+    } catch { llm = '(LLM timeout)'; }
   }
 
   return { verdict, score, problems, warnings, llm };
