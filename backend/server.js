@@ -305,6 +305,11 @@ const server = http.createServer(async (req, res) => {
       nativeTools: ['node', 'ollama'].filter(() => true),
     });
   }
+
+  // =========================================================================
+  // API: Notas
+  // =========================================================================
+  if (u.pathname === '/api/notes' && req.method === 'POST') {
     const body = await readJSON(req);
     const s = sessionMod.load(SESSION_FILE);
     sessionMod.addNote(s, body.text || '');
