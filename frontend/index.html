@@ -338,10 +338,21 @@ async function renderReportes() {
 async function renderChat() {
   let html = '<h2>💬 Chat con el LLM</h2>';
   html += '<div class="card">';
-  html += '<div id="chat-history" style="max-height:400px;overflow:auto;margin-bottom:12px"></div>';
-  html += '<textarea id="chat-input" placeholder="Pregunta al LLM..." rows="2" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>';
-  html += '<button class="btn btn-sm" onclick="sendChat()">Enviar</button>';
-  html += '</div>';  return html;
+  html += '<div id="chat-history" style="max-height:500px;overflow-y:auto;margin-bottom:12px;padding:8px;background:var(--bg);border-radius:6px"></div>';
+  html += '<textarea id="chat-input" placeholder="Escribe tu pregunta..." rows="3" style="resize:vertical"></textarea>';
+  html += '<div style="display:flex;gap:8px;margin-top:8px">';
+  html += '<button class="btn btn-sm" onclick="sendChat()" id="btn-send-chat">Enviar</button>';
+  html += '<span class="muted" style="line-height:32px">Enter = enviar · Shift+Enter = nueva línea</span>';
+  html += '</div>';
+  html += '</div>';
+  // Attach Enter handler directly after render
+  setTimeout(() => {
+    const ta = document.getElementById('chat-input');
+    if (ta) ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+    });
+  }, 50);
+  return html;
 }
 
 async function renderCompliance() {
@@ -584,13 +595,22 @@ window.verifyReport = async function() {
 };
 
 window.sendChat = async function() {
-  const prompt = document.getElementById('chat-input').value.trim();
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  const prompt = input.value.trim();
   if (!prompt) return;
   const hist = document.getElementById('chat-history');
-  hist.innerHTML += '<div class="muted" style="margin-bottom:6px">tú> ' + prompt + '</div>';
-  document.getElementById('chat-input').value = '';
+  if (!hist) return;
+  hist.innerHTML += '<div class="muted" style="margin-bottom:6px">👤 Tú> ' + prompt + '</div>';
+  input.value = '';
+  const thinking = document.createElement('div');
+  thinking.style.cssText = 'margin-bottom:10px;color:var(--yellow)';
+  thinking.textContent = '🤖 Pensando...';
+  hist.appendChild(thinking);
+  hist.scrollTop = hist.scrollHeight;
   const r = await api('/llm/chat', { method: 'POST', body: JSON.stringify({ prompt }) });
-  hist.innerHTML += '<div style="margin-bottom:10px;color:var(--primary)">🤖 ' + (r.text || 'Sin respuesta') + '</div>';
+  thinking.style.color = 'var(--primary)';
+  thinking.textContent = '🤖 ' + (r.text || 'Sin respuesta del LLM');
   hist.scrollTop = hist.scrollHeight;
 };
 
