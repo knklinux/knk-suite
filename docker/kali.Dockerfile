@@ -8,22 +8,46 @@ RUN apt-get update && apt-get install -y \
     # Network scanning
     nmap netcat-openbsd socat \
     # Web testing
-    sqlmap nikto \
-    # Reconnaissance
-    amass subfinder httpx-toolkit \
+    sqlmap nikto ffuf whatweb dirb wpscan \
+    # Reconnaissance (apt packages)
+    amass subfinder httpx-toolkit dnsx \
     # Password cracking
     hydra john \
     # Forensics
     binwalk foremost steghide \
+    # Build de tools Go
+    golang-go \
     # Utilities
     curl wget git vim nano \
-    # Cleanup
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install nuclei and ffuf from GitHub releases
-RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest 2>/dev/null || true
-RUN go install -v github.com/ffuf/ffuf/v2@latest 2>/dev/null || true
+# Go toolchain: PATH para binarios de go install
+ENV PATH="/root/go/bin:${PATH}" \
+    GOFLAGS="-buildvcs=false"
+
+# ProjectDiscovery suite (nuclei, katana, naabu, dnsx ya vía apt; actualizamos los demás)
+RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
+ && go install -v github.com/projectdiscovery/katana/cmd/katana@latest \
+ && go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest \
+ && go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest \
+ && go install -v github.com/ffuf/ffuf/v2@latest
+
+# Tools de recolecta de URLs y parámetros (tomnomnom + lc)
+RUN go install -v github.com/tomnomnom/assetfinder@latest \
+ && go install -v github.com/tomnomnom/anew@latest \
+ && go install -v github.com/tomnomnom/qsreplace@latest \
+ && go install -v github.com/tomnomnom/gf@latest \
+ && go install -v github.com/lc/gau/v2/cmd/gau@latest \
+ && go install -v github.com/jaeles-project/gospider@latest
+
+# Hunting y evidencia
+RUN go install -v github.com/hahwul/dalfox/v2@latest \
+ && go install -v github.com/sensepost/gowitness@latest \
+ && go install -v github.com/tomnomnom/waybackurls@latest
+
+# jwt_tool (npm) — token testing
+RUN npm install -g jwt-tool 2>/dev/null || true
 
 # Create non-root user
 RUN useradd -m -s /bin/bash hacker

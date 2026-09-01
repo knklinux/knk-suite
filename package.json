@@ -8,13 +8,16 @@
     "dev": "concurrently \"node backend/index.js\" \"cd frontend && npm run dev\"",
     "build": "cd frontend && npm run build",
     "setup": "cd frontend && npm install && cd .. && npm install",
-    "test": "node backend/test.js"
+    "test": "node backend/test.js",
+    "smoke": "node backend/smoke-server.js",
+    "headless": "node backend/headless.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",
     "express": "^4.21.0",
     "node-pty": "^1.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "puppeteer": "^23.0.0"
   },
   "devDependencies": {
     "concurrently": "^9.0.0"

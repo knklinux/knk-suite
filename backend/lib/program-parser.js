@@ -29,9 +29,13 @@ const GENERIC = new Set([
   'schema.org', 'googletagmanager.com', 'google-analytics.com', 'ywh.com',
   'cdn-yeswehack.com', 'imgur.com', 'youtube.com', 'vimeo.com', 'discord.com',
   'slack.com', 'telegram.org', 'whatsapp.com', 'medium.com', 'gmail.com',
-  'outlook.com', 'microsoft.com', 'google.co', 'fontawesome.com',
+  'outlook.com', 'microsoft.com',  'google.co', 'fontawesome.com',
   'cdnjs.cloudflare.com', 'maxcdn.bootstrapcdn.com',
+  // Dominios propios de la plataforma (nav/help/footer — NUNCA scope)
+  'yeswehack.io', 'helpcenter.yeswehack.io', 'support.yeswehack.io',
+  'docs.yeswehack.com', 'go.yeswehack.com', 'cdn-yeswehack.com',
 ]);
+
 
 function rootOf(domain) {
   const parts = domain.split('.');
@@ -45,6 +49,7 @@ function cleanDomain(raw) {
     .replace(/^www\./, '')
     .split('/')[0]
     .split('\\')[0]
+    .replace(/^u002[fF]/i, '') // artefacto de escape \u002f en HTML de YWH
     .replace(/\\u002[fF]/g, '')
     .trim();
 }

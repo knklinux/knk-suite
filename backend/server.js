@@ -1,7 +1,11 @@
 'use strict';
 
 // ============================================================================
-// KNK SUITE v2 — Servidor Express (1 solo puerto: 8086)
+// ⚠️  DEPRECATED — Servidor legado sin autenticación ni controles de seguridad
+// ============================================================================
+// Este archivo es código muerto: nadie lo importa y start.sh/package.json usan
+// backend/index.js. No ejecutes este servidor en producción ni lo uses para
+// pruebas contra terceros. Mantenido solo como referencia histórica.
 // ============================================================================
 
 const http = require('http');
@@ -116,6 +120,7 @@ const server = http.createServer(async (req, res) => {
     const s = sessionMod.load(SESSION_FILE);
     if (!s.opplan) return sendJSON(res, 400, { ok: false, error: 'No hay OPPLAN' });
     s.opplan.status = 'aprobado';
+    s.opplan.autorizado = true; // aprobar = confirmar autorización escrita
     s.opplan.aprobadoEn = new Date().toISOString();
     sessionMod.save(SESSION_FILE, s);
     return sendJSON(res, 200, { ok: true, opplan: s.opplan });

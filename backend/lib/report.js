@@ -100,4 +100,62 @@ function writeReport(workspaceDir, json) {
   return file;
 }
 
-module.exports = { generateReport, writeReport, slugify };
+/**
+ * Exporta el reporte a HTML autocontenido (imprimible a PDF desde el navegador).
+ */
+function writeReportHtml(workspaceDir, json) {
+  const fs = require('fs');
+  const path = require('path');
+  const dir = path.join(workspaceDir, 'reportes');
+  fs.mkdirSync(dir, { recursive: true });
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const steps = (Array.isArray(json.pasos) && json.pasos.length ? json.pasos : []).map(s => `<li>${esc(s)}</li>`).join('') || '<li>(PENDIENTE — pasos obligatorios)</li>';
+  const ev = (Array.isArray(json.evidencia) && json.evidencia.length ? json.evidencia : []).map(e => `<li>${esc(e)}</li>`).join('') || '<li>❌ SIN EVIDENCIA</li>';
+  const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><title>${esc(json.titulo)}</title>
+<style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;color:#111}h1{font-size:1.6rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.4rem .6rem;text-align:left}th{background:#f4f4f4}</style>
+</head><body>
+<h1>${esc(json.titulo)}</h1>
+<table>
+<tr><th>Programa</th><td>${esc(json.programa)}</td></tr>
+<tr><th>Asset</th><td>${esc(json.asset)}</td></tr>
+<tr><th>Tipo / CWE / CVSS</th><td>${esc(json.tipo)} / ${esc(json.cwe)} / ${esc(json.cvss)}</td></tr>
+<tr><th>Severidad</th><td>${esc(json.severidad)}</td></tr>
+<tr><th>Scope documentado</th><td>${esc(json.scopeDocumentado)}</td></tr>
+<tr><th>User-Agent</th><td><code>${esc(json.userAgent)}</code></td></tr>
+</table>
+<h2>Resumen / Impacto</h2><p>${esc(json.impacto)}</p>
+<h2>Pasos de reproducción</h2><ol>${steps}</ol>
+<h2>Evidencia</h2><ul>${ev}</ul>
+<h2>Material de apoyo</h2>
+<p>Screenshots: ${esc(json.screenshotsPath || '❌')}</p>
+<p>Request/Response: ${esc(json.requestResponsePath || '❌')}</p>
+<h2>Remediación</h2><p>${esc(json.remediacion)}</p>
+<hr><p><em>Generado por knk-suite v2.1 | Reproducido ${json.reproducible || 0}x | ${json.fecha}</em></p>
+</body></html>`;
+  const file = path.join(dir, `${slugify(json.titulo)}.html`);
+  fs.writeFileSync(file, html, 'utf8');
+  return file;
+}
+
+/**
+ * Diff simple entre dos versiones de un reporte (campos añadidos/cambiados/eliminados).
+ */
+function diffReports(before, after) {
+  const a = before || {};
+  const b = after || {};
+  const changed = [];
+  const added = [];
+  const removed = [];
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    const av = JSON.stringify(a[key]);
+    const bv = JSON.stringify(b[key]);
+    if (a[key] === undefined && b[key] !== undefined) added.push(key);
+    else if (a[key] !== undefined && b[key] === undefined) removed.push(key);
+    else if (av !== bv) changed.push(key);
+  }
+  return { changed, added, removed, summary: `${changed.length} cambiados, ${added.length} añadidos, ${removed.length} eliminados` };
+}
+
+module.exports = { generateReport, writeReport, writeReportHtml, diffReports, slugify };

@@ -7,6 +7,9 @@ export default function Dashboard({ api, status }) {
   const [scope, setScope] = useState('');
   const [ua, setUa] = useState('');
   const [toast, setToast] = useState('');
+  const [guided, setGuided] = useState(false);
+  const [guidedMsg, setGuidedMsg] = useState('');
+  const [pasteScope, setPasteScope] = useState('');
 
   useEffect(() => {
     api('/session').then(s => {
@@ -25,11 +28,29 @@ export default function Dashboard({ api, status }) {
     showToast('🔍 Analizando...');
     const r = await api('/parse-program', { method: 'POST', body: JSON.stringify({ url: programUrl }) });
     if (r.ok) {
-      setTarget(r.parsed.target);
-      setScope(r.parsed.domains.join(', '));
-      setUa(r.parsed.userAgent || '');
-      showToast('✅ ' + r.parsed.programName + ' — ' + r.parsed.domains.length + ' dominios');
+      if (r.guided) {
+        setGuided(true);
+        setGuidedMsg(`Programa detectado: ${r.parsed.programName || r.parsed.source}. ${r.parsed.source === 'hackerone' ? 'HackerOne es una SPA que requiere sesión: el scope NO se puede scrapear automáticamente.' : 'El scope no se pudo extraer automáticamente.'}`);
+        setUa(r.parsed.userAgent || '');
+        showToast('⚠️ Modo guiado: pega el scope manualmente (abajo)');
+      } else {
+        setGuided(false);
+        setTarget(r.parsed.target);
+        setScope(r.parsed.domains.join(', '));
+        setUa(r.parsed.userAgent || '');
+        showToast('✅ ' + r.parsed.programName + ' — ' + r.parsed.domains.length + ' dominios (VERIFICA contra la página del programa)');
+      }
     } else showToast('❌ ' + (r.error || 'Error'));
+  };
+
+  const parsePastedScope = async () => {
+    if (!pasteScope) return showToast('Pega el texto del scope primero');
+    const r = await api('/hackerone/parse-scope', { method: 'POST', body: JSON.stringify({ text: pasteScope }) });
+    if (r.ok && r.parsed?.inScope?.length) {
+      setScope(r.parsed.inScope.join(', '));
+      setGuided(false);
+      showToast('✅ Scope cargado: ' + r.parsed.inScope.length + ' dominios + ' + r.parsed.outOfScope.length + ' excluidos');
+    } else showToast('❌ No se extrajo ningún dominio del texto pegado');
   };
 
   const fixTarget = async () => {
@@ -52,7 +73,20 @@ export default function Dashboard({ api, status }) {
         <h3>⚡ Setup rápido</h3>
         <input placeholder="URL del programa (YesWeHack/HackerOne)" value={programUrl} onChange={e => setProgramUrl(e.target.value)} />
         <button className="btn btn-sm" onClick={autoParse} style={{ marginRight: 8 }}>🔍 Auto-rellenar</button>
-        <span className="muted">Pega la URL y la suite extrae scope, UA, políticas</span>
+        <span className="muted">Pega la URL y la suite extrae scope, UA, políticas (YesWeHack auto / HackerOne guiado)</span>
+        {guided && (
+          <div className="card" style={{ marginTop: 8, borderColor: 'var(--yellow)' }}>
+            <p style={{ fontSize: 12, color: 'var(--yellow)' }}>{guidedMsg}</p>
+            <textarea
+              rows={4}
+              placeholder={'Pega aquí el texto de la pestaña Scope del programa (H1: Scope → copiar). Líneas como: *.example.com, example.com, !admin.example.com'}
+              value={pasteScope}
+              onChange={e => setPasteScope(e.target.value)}
+              style={{ width: '100%', fontFamily: 'monospace', fontSize: 11 }}
+            />
+            <button className="btn btn-sm" onClick={parsePastedScope} style={{ marginTop: 6 }}>📋 Parsear scope pegado</button>
+          </div>
+        )}
         <input placeholder="Target (ej: example.com)" value={target} onChange={e => setTarget(e.target.value)} />
         <input placeholder="Scope (ej: *.example.com)" value={scope} onChange={e => setScope(e.target.value)} />
         <input placeholder="User-Agent (según política)" value={ua} onChange={e => setUa(e.target.value)} />

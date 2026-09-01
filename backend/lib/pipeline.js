@@ -14,7 +14,7 @@ const reportMod = require('./report');
 const verifierMod = require('./verifier');
 const llmMod = require('./llm');
 const dockerMod = require('./docker');
-const { execSync } = require('child_process');
+const netMod = require('./net');
 
 // ── Docker Kali helpers ──────────────────────────────
 let _dockerAvailable = null;
@@ -46,9 +46,22 @@ function getPhases() { return PHASES; }
  * @param {string} phaseId
  * @param {object} params - parámetros de la fase
  */
+function authorizationError(session, target) {
+  const opplan = session.opplan || {};
+  const host = netMod.normalizeHost(target || session.target);
+  if (!opplanMod.validate(opplan).ok || opplan.status !== 'aprobado' || !opplanMod.inScope(opplan, host) || !netMod.inScope(host)) {
+    return 'Ejecución bloqueada: OPPLAN aprobado, autorización escrita y target exacto dentro del scope son obligatorios.';
+  }
+  return null;
+}
+
 async function runPhase(ctx, phaseId, params = {}) {
   const { session } = ctx;
   const result = { phase: phaseId, ok: true, output: null, findings: [] };
+  if (phaseId !== 'plan' && phaseId !== 'exploit' && phaseId !== 'reporte' && phaseId !== 'verificar') {
+    const blocked = authorizationError(session, params.target || session.target);
+    if (blocked) return { ...result, ok: false, error: blocked };
+  }
 
   switch (phaseId) {
     case 'plan': {
@@ -162,16 +175,36 @@ async function runPhase(ctx, phaseId, params = {}) {
     }
 
     case 'exploit': {
+      const authError = authorizationError(session, params.target || session.target);
+      if (authError) return { ...result, ok: false, error: authError };
+      if (params.humanReview !== true) return { ...result, ok: false, error: 'Revisión humana obligatoria antes de validar candidatos.' };
       // Las compuertas son interactivas — desde la API solo mostramos los candidatos disponibles
+      const bizlogic = require('./bizlogic');
+      const playbook = require('./playbook');
+      const bizPlan = bizlogic.planTests({ target: session.target, scope: session.scope });
+      const playbookOut = playbook.generatePlaybook({
+        target: session.target,
+        scope: session.scope,
+        subdomains: session.artifacts?.subdominios || [],
+        urls: session.artifacts?.urls_historicas || [],
+        tech: session.artifacts?.tech || [],
+        restrictions: session.artifacts?.restrictions || [],
+        mobileApps: session.artifacts?.mobileApps || [],
+        bizlogicPlan: bizPlan,
+      });
       result.output = {
-        message: 'Usa las compuertas (cors, idor, ssrf, xss, sub) para validar candidatos manualmente.',
-        gates: ['cors', 'idor', 'ssrf', 'xss', 'sub'],
+        message: 'Explotación manual: sigue el playbook generado y valida con las compuertas (incluye lógica de negocio).',
+        gates: ['cors', 'idor', 'ssrf', 'xss', 'sub', 'bizlogic', 'camera'],
+        bizlogicPlan: bizPlan,
+        playbook: playbookOut,
+        playbookMarkdown: playbook.renderPlaybook(playbookOut),
       };
       break;
     }
 
     case 'reporte': {
-      // Draft report — we use relaxed gates because evidence is added manually later
+      if (params.humanReview !== true) return { ...result, ok: false, error: 'Revisión humana obligatoria antes de crear el reporte.' };
+      // Draft report — readiness ahora usa exclusivamente datos reales suministrados por el operador
       const findings = session.findings || [];
       const lastFinding = findings.slice().reverse()[0];
 
@@ -190,18 +223,18 @@ async function runPhase(ctx, phaseId, params = {}) {
         steps: params.steps || ['[PENDIENTE] Paso 1: identificar endpoint vulnerable', '[PENDIENTE] Paso 2: reproducir exploit', '[PENDIENTE] Paso 3: documentar impacto'],
         evidence: params.evidence || ['Screenshot del exploit', 'Screenshot del impacto', 'curl reproducible'],
         // Draft mode: gates pasan para generar borrador (se refuerzan al enviar)
-        inScope: true,
-        noDuplicate: true,
-        notDisqualifier: true,
-        exploitable: true,
-        evidenceScreenshots: true,    // draft — el verificador pedirá screenshots reales
-        evidenceRequestResponse: true, // draft — el verificador pedirá curl real
-        pocMinimal: true,
-        noPII: true,
-        reproducibleCount: 2,
+        inScope: netMod.inScope(params.asset || session.target),
+        noDuplicate: params.noDuplicate === true,
+        notDisqualifier: params.notDisqualifier === true,
+        exploitable: params.exploitable === true,
+        evidenceScreenshots: params.evidenceScreenshots === true,
+        evidenceRequestResponse: params.evidenceRequestResponse === true,
+        pocMinimal: params.pocMinimal === true,
+        noPII: params.noPII === true,
+        reproducibleCount: Number(params.reproducibleCount || 0),
         severityHonest: true,
-        screenshotsPath: params.screenshotsPath || '⚠️  PENDIENTE — capturas obligatorias antes de enviar',
-        requestResponsePath: params.requestResponsePath || '⚠️  PENDIENTE — curl reproducible obligatorio',
+        screenshotsPath: params.screenshotsPath || '',
+        requestResponsePath: params.requestResponsePath || '',
         userAgent: session.artifacts?.userAgent || '—',
         programUrl: session.artifacts?.programUrl || '',
         scopeDocumentado: (session.scope || []).join(', '),
@@ -267,9 +300,7 @@ async function runFullPipeline(ctx, target, opts = {}) {
     results.push(res);
     ctx.setPhase(phaseId, { done: res.ok, result: res });
     ctx.save();
-    // Solo detenerse si falla el plan (sin OPPLAN no seguimos)
-    // El resto de fases continúan aunque fallen (recon puede fallar, scan sigue)
-    if (!res.ok && phaseId === 'plan') break;
+    if (!res.ok) break;
   }
 
   return {
