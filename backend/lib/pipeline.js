@@ -143,6 +143,13 @@ async function runPhase(ctx, phaseId, params = {}) {
         nuclei: dockerReady() ? '⏭ Saltado (ejecuta manual: docker exec knk-kali nuclei -u URL -t http/misconfiguration)' : null,
         dockerKali: dockerReady(),
       };
+      // Guardar headers/CORS en artefactos para que el playbook los conozca
+      ctx.setArtifact('headers', {
+        missing: hdrs.missing.map(h => h.label),
+        present: hdrs.present.map(h => h.label),
+        cors: { acao: cors.acao, acac: cors.acac, suspicious: cors.suspicious },
+        status: hdrs.status,
+      });
 
       if (hdrs.missing.length) result.findings.push({ type: 'SCAN', summary: `${hdrs.missing.length} headers de seguridad ausentes`, severity: 'info' });
       if (cors.suspicious) result.findings.push({ type: 'SCAN', summary: 'CORS sospechoso — validar con compuerta', severity: 'low' });
@@ -188,6 +195,8 @@ async function runPhase(ctx, phaseId, params = {}) {
         subdomains: session.artifacts?.subdominios || [],
         urls: session.artifacts?.urls_historicas || [],
         tech: session.artifacts?.tech || [],
+        headers: session.artifacts?.headers || {},
+        cors: session.artifacts?.headers?.cors || {},
         restrictions: session.artifacts?.restrictions || [],
         mobileApps: session.artifacts?.mobileApps || [],
         bizlogicPlan: bizPlan,
