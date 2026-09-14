@@ -12,8 +12,10 @@
 #          (la URL nueva se registra en evidencia-poc/http/canario-ssrf-log.txt,
 #           el registro que leen el resto de fases y los relanzamientos)
 #   3) Verifica Firefox + BiDi (:9344) — solo aviso (es opcional e interactivo)
-#   4) Lanza la cola completa: sonda → E16 → E17 → E18 → H1-H3
-#   5) Guarda todo en evidencia-poc/http/v6-sep10/
+#   4) AVISO de enfriamiento E16: si la última sonda dio 403 y hace <24 h,
+#      lo dice ANTES de gastar otra sonda en la compuerta de la cola
+#   5) Lanza la cola completa: sonda → E16 → E17 → E18 → H1-H3
+#   6) Guarda todo en evidencia-poc/http/v6-sep10/
 #
 # Requisitos:
 #   - Node en PATH (para el canary)
@@ -62,16 +64,28 @@ resolve_via_dns() {  # $1=host  $2=servidor DNS  → imprime la 1ª IPv4 ajena a
     | head -1
 }
 
+# TLS: el schannel de Windows comprueba revocación (CRL/OCSP) y si esos
+# servidores no alcanzan, TODO curl https muere con exit 35 aunque la red
+# esté bien. --ssl-no-revoke lo desactiva (existe solo en builds schannel:
+# se detecta una vez; en otros builds queda vacío y no molesta).
+CURL_TLS=()
+if curl --help all 2>/dev/null | grep -q -- "--ssl-no-revoke"; then
+  CURL_TLS=(--ssl-no-revoke)
+fi
+
 tunnel_hit() {  # $1=url base  $2=nonce  → imprime http_code (0000 si no hay manera)
   local url="$1" nonce="$2" code host ip
-  code=$(curl -s -m 8 "$url/hit?nonce=$nonce" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "0")
+  code=$(curl -s -m 8 "${CURL_TLS[@]}" "$url/hit?nonce=$nonce" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "0")
   [ "$code" = "204" ] && { echo "$code"; return 0; }
-  # fallback: DNS local fallando → resolvemos vía 1.1.1.1 y fijamos la IP
+  # fallback: el caché DNS de Windows guarda el NXDOMAIN de hostnames
+  # trycloudflare recién creados (curl/node ENOTFOUND aunque nslookup
+  # resuelva) → resolvemos vía 1.1.1.1 y fijamos la IP con --resolve,
+  # que esquiva el caché del SO por completo.
   host=$(printf '%s' "$url" | sed -E 's#https://([^/]+)/.*#\1#')
   ip=$(resolve_via_dns "$host" "1.1.1.1")
   if [ -n "$ip" ]; then
     log "    (DNS local no resuelve $host — fallback 1.1.1.1 → $ip)"
-    code=$(curl -s -m 8 --resolve "$host:443:$ip" "$url/hit?nonce=$nonce" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "0")
+    code=$(curl -s -m 8 "${CURL_TLS[@]}" --resolve "$host:443:$ip" "$url/hit?nonce=$nonce" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "0")
   fi
   echo "$code"
 }
@@ -199,7 +213,42 @@ else
   log "    Relanzar a mano: firefox -no-remote -P default-release -remote-debugging-port 9344"
 fi
 
-# ── 1) Ejecutar la cola ───────────────────────────────────────────────────
+# ── 1) Enfriamiento E16: >=24 h desde el último 403 anti-abuso ───────────
+# La última sonda real deja ts + antiAbusoActivo en salud-sesiones-informe.json.
+# FLAG activo y <24 h → AVISO (no bloquea): la compuerta de la cola repetirá
+# la sonda y auto-salteará (exit 4) si el flag sigue activo; este aviso evita
+# gastar esa petición cuando por reloj ya se sabe que toca esperar.
+HEALTH_JSON="evidencia-poc/http/salud-sesiones-informe.json"
+if [ -f "$HEALTH_JSON" ]; then
+  read -r ESTADO VALOR <<< "$(node -e '
+    const fs = require("fs");
+    try {
+      const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const mins = Math.round((Date.now() - Date.parse(j.ts)) / 6e4);
+      if (!Number.isFinite(mins)) { console.log("BAD"); }
+      else if (!j.antiAbusoActivo) { console.log("CLEAN " + j.ts); }
+      else { console.log("FLAG " + mins); }
+    } catch { console.log("BAD"); }
+  ' "$HEALTH_JSON")"
+  case "$ESTADO" in
+    CLEAN)
+      log "✅ Última sonda anti-abuso limpia ($VALOR) — sin enfriamiento pendiente" ;;
+    FLAG)
+      if [ "$VALOR" -lt 1440 ]; then
+        REST=$((1440 - VALOR))
+        log "⚠️  ENFRIAMIENTO INCOMPLETO (política E16): último 403 hace $((VALOR/60))h$((VALOR%60))m — faltan ~$((REST/60))h$((REST%60))m para las 24h"
+        log "    Si se lanza igual, la compuerta gastará la sonda y auto-salteará la cola (exit 4)"
+      else
+        log "✅ Enfriamiento E16 cumplido: $((VALOR/60))h desde el último 403 (>=24h)"
+      fi ;;
+    *)
+      log "⚠️  Informe de salud ilegible — enfriamiento no verificable (la compuerta de la cola decidirá)" ;;
+  esac
+else
+  log "⚠️  Sin $HEALTH_JSON — enfriamiento no verificable (la compuerta de la cola decidirá)"
+fi
+
+# ── 2) Ejecutar la cola ───────────────────────────────────────────────────
 log ""
 log "=== LANZANDO COLA ==="
 log "Copiando resultado de la secuencia..."
