@@ -160,4 +160,4 @@ autorizada — nunca dispositivos ajenos. Sin autorización escrita: no ejecutes
 
 ## 📄 Licencia
 
-MIT — uso educativo y de investigación responsable.
+[MIT](LICENSE) — uso educativo y de investigación responsable. Consulta el fichero [LICENSE](LICENSE) para el texto completo.
