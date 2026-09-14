@@ -404,8 +404,18 @@ fn main() {
             process_watchdog::sweep_orphans();
             let state = app.state::<BackendState>();
             let status = start_backend(&app.handle(), &state);
+            // Bootstrap del arranque limpio: /bootstrap sirve el HTML sin
+            // exigir token y PLANTA la cookie de sesión. Con ella en el jar,
+            // la app autentica sola desde la primera carga (ver
+            // docs/BOOTSTRAP-COOKIE-KNK-TOKEN-2026-09-14.md). Se navegan
+            // AMBAS ventanas: la assistant también arrancaba contra un
+            // backend muerto y su recarga caía en 401.
+            let boot_url = format!("http://{HOST}:{PORT}/bootstrap");
             if let Some(main) = app.get_webview_window("main") {
-                let _ = main.navigate(format!("http://{HOST}:{PORT}").parse().map_err(|e| format!("URL inválida: {e}"))?);
+                let _ = main.navigate(boot_url.parse().map_err(|e| format!("URL inválida: {e}"))?);
+            }
+            if let Some(assistant) = app.get_webview_window("assistant") {
+                let _ = assistant.navigate(format!("{boot_url}#assistant").parse().map_err(|e| format!("URL inválida: {e}"))?);
             }
             if !status.running {
                 eprintln!("[knkLinux] {}", status.reason.unwrap_or_else(|| "backend no disponible".to_string()));

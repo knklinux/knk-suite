@@ -37,6 +37,18 @@ app.use('/api', (req, res, next) => {
 app.use('/api', publicCamerasRouter);
 app.use('/api', router);
 
+// Bootstrap del arranque limpio: sirve el HTML SIN exigir token y planta
+// la cookie de sesión (como hace auth.cors en toda respuesta). Solo
+// sockets loopback: es el mismo riesgo que el estático (HTML sin datos).
+// El shell de Tauri navega aquí cuando no hay cookie previa; con la
+// cookie en el jar, la siguiente navegación autentica sola.
+app.get('/bootstrap', (req, res) => {
+  if (!auth.isLocalSocket(req)) return res.status(403).json({ ok: false, error: 'solo local' });
+  const index = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
+  if (!fs.existsSync(index)) return res.status(404).json({ error: 'Frontend not built — run: cd frontend && npm run build' });
+  auth.cors(req, res, () => res.sendFile(index));
+});
+
 // SPA fallback
 app.get('*', (req, res) => {
   const index = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
