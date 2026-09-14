@@ -227,7 +227,16 @@ fn backend_entry(app: &AppHandle) -> PathBuf { app_root(app).join("backend").joi
 fn node_executable() -> String {
     if let Ok(value) = env::var("KNK_NODE_EXE") { if !value.trim().is_empty() { return value; } }
     if cfg!(target_os = "windows") {
-        let candidates = [
+        // 1) Modo PORTABLE: node embebido junto al exe (<exe_dir>/runtime/node.exe).
+        //    Permite distribuir el workbench en máquinas sin Node instalado.
+        if let Ok(exe) = env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let embedded = dir.join("runtime").join("node.exe");
+                if embedded.exists() { return embedded.to_string_lossy().to_string(); }
+            }
+        }
+        // 2) Instalado con runtime embebido en resources.
+        let mut candidates = [
             "C:\\Program Files\\nodejs\\node.exe",
             "C:\\Program Files (x86)\\nodejs\\node.exe",
         ];
@@ -236,6 +245,13 @@ fn node_executable() -> String {
         }
         "node.exe".to_string()
     } else {
+        // Portable en Unix: <exe_dir>/runtime/node
+        if let Ok(exe) = env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let embedded = dir.join("runtime").join("node");
+                if embedded.exists() { return embedded.to_string_lossy().to_string(); }
+            }
+        }
         "node".to_string()
     }
 }
