@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HLSPlayer from './HLSPlayer';
+import HlsAuditPanel from './HlsAuditPanel';
 
 // ============================================================================
 // PublicCameras.jsx — Cámaras PÚBLICAS en directo
@@ -76,6 +77,32 @@ export default function PublicCameras({ api }) {
   const [hideFailing, setHideFailing] = useState(false);
   const [failed, setFailed] = useState(() => new Set());
   const loadToken = useRef(0);
+  // Auditoría HLS por tarjeta: qué cámara tiene el panel abierto y su
+  // manifiesto PROXIED pre-descargado (inline) para el análisis pasivo.
+  const [auditFor, setAuditFor] = useState(null);
+  const auditKey = (c) => `${c.source}:${c.id}`;
+  const openAudit = async (camera) => {
+    if (!camera.hls) return;
+    if (auditFor && auditKey(auditFor.camera) === auditKey(camera)) { setAuditFor(null); return; }
+    setAuditFor({ camera, manifest: null, loading: true, proxiedUrl: '' });
+    let proxiedUrl = '';
+    let manifest = null;
+    try {
+      const u = new URL(camera.hls, window.location.origin);
+      // URL PROXIED absoluta: es la identidad del manifiesto que reproduce el
+      // reproductor, y su host (127.0.0.1) es lo que hace que el host embebido
+      // en la reescritura se detecte como ajeno por el analizador.
+      proxiedUrl = u.toString();
+      // El manifiesto se pide al PROXY same-origin (misma cookie de sesión):
+      // es exactamente el texto que reproduce el reproductor, que es lo que
+      // se debe auditar. Si falla, el backend lo descarga por sí mismo.
+      try {
+        const r = await fetch(u.pathname + u.search, { credentials: 'same-origin' });
+        if (r.ok) manifest = await r.text();
+      } catch { /* sin inline: backend fetch */ }
+    } catch { /* camera.hls malformado: el endpoint dará el error */ }
+    setAuditFor({ camera, manifest, loading: false, proxiedUrl });
+  };
 
   const load = useCallback(async (options = {}) => {
     const { append = false, ...next } = options;
@@ -545,8 +572,27 @@ export default function PublicCameras({ api }) {
                 <span style={{ fontSize: 9, fontFamily: 'monospace', color: KIND_COLORS[camera.kind] || 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   [{camera.source}]{camera.road ? ` · ${camera.road}` : ''}{camera.city ? ` · ${camera.city}` : ''}
                 </span>
-                <button className="btn btn-sm btn-outline" style={{ padding: '1px 6px', fontSize: 9 }} onClick={() => setSelected(camera)}>ampliar</button>
+                <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {camera.hls && (
+                    <button className="btn btn-sm btn-outline" style={{ padding: '1px 6px', fontSize: 9 }}
+                      onClick={(e) => { e.stopPropagation(); openAudit(camera); }}
+                      title="Auditar el proxy HLS de esta cámara: detecta reescritura de hosts ajenos (proxy abierto → SSRF)">
+                      🛡 auditar
+                    </button>
+                  )}
+                  <button className="btn btn-sm btn-outline" style={{ padding: '1px 6px', fontSize: 9 }} onClick={() => setSelected(camera)}>ampliar</button>
+                </span>
               </div>
+              {auditFor && auditKey(auditFor.camera) === auditKey(camera) && auditFor.loading && (
+                <div style={{ padding: '6px 8px', fontSize: 9, fontFamily: 'monospace', color: 'var(--primary)', borderTop: '1px dashed var(--border)' }}>
+                  🛡 preparando auditoría del proxy HLS…
+                </div>
+              )}
+              {auditFor && auditKey(auditFor.camera) === auditKey(camera) && !auditFor.loading && (
+                <div style={{ padding: '0 8px 8px' }}>
+                  <HlsAuditPanel api={api} manifestUrl={auditFor.proxiedUrl} manifestInline={auditFor.manifest} cameraName={camera.name} onClose={() => setAuditFor(null)} />
+                </div>
+              )}
             </div>
           ))}
         </div>

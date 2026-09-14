@@ -653,6 +653,17 @@ router.post('/cameras/exposed/findings', (req, res) => {
 // hallazgo de la misión con evidencia (mismo almacén que los hallazgos
 // de exposición). La sonda activa es opt-in (probe:true) y habla SOLO
 // con el proxy auditado, nunca con el destino directo.
+// ¿La petición entrante trae la cookie de sesión de KNK? Sin regex con
+// escapes: split + startsWith es igual de claro y no se puede romper.
+function knkCookiePresent(cookieHeader) {
+  if (!cookieHeader) return false;
+  const SEP = String.fromCharCode(59); // ;
+  for (const part of String(cookieHeader).split(SEP)) {
+    if (part.trim().startsWith('knk_token=')) return true;
+  }
+  return false;
+}
+
 router.post('/cameras/exposed/hls-audit', async (req, res) => {
   try {
     const body = req.body || {};
@@ -671,7 +682,24 @@ router.post('/cameras/exposed/hls-audit', async (req, res) => {
     }
     const analysis = hlsAudit.analyzeManifest({ url: manifestUrl, body: manifestBody });
     let probe = null;
-    if (body.probe === true) probe = await hlsAudit.probeProxy({ analysis });
+    if (body.probe === true) {
+      // La sonda habla con el PROXY (la línea reescrita del manifiesto). Si
+      // esa línea es relativa (patrón de la propia KNK), se absolutiza contra
+      // el origen local del backend — nunca contra un host externo.
+      const localOrigin = `${req.protocol || 'http'}://${req.get('host') || '127.0.0.1:' + (process.env.KNK_PORT || 8086)}`;
+      const rawTarget = analysis.embedded[0] && analysis.embedded[0].line;
+      const isAbsoluteTarget = rawTarget.startsWith('http://') || rawTarget.startsWith('https://');
+      if (rawTarget && !isAbsoluteTarget) {
+        try { analysis.embedded[0].line = new URL(rawTarget, localOrigin).toString(); } catch { /* se sonda tal cual */ }
+      }
+      // Al auditar el proxy de KNK, la sonda necesita la credencial del
+      // llamante (cookie knk_token); sin ella el propio gate daría 401 y el
+      // veredicto sería un falso negativo.
+      let probeHeaders;
+      const ck = req.headers.cookie;
+      if (ck && knkCookiePresent(ck)) probeHeaders = { Cookie: ck };
+      probe = await hlsAudit.probeProxy({ analysis, headers: probeHeaders });
+    }
     const out = { ok: true, analysis, probe };
     if (body.create === true) {
       const session = db.getOrCreateSession();

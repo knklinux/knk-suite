@@ -169,7 +169,7 @@ function analyzeManifest({ url, body } = {}) {
  * @param {object} opts { analysis, fetchImpl }
  * @returns {Promise<object>} { ok, attempted, reachable, status, latencyMs, note }
  */
-async function probeProxy({ analysis, fetchImpl } = {}) {
+async function probeProxy({ analysis, fetchImpl, headers } = {}) {
   const f = fetchImpl || globalThis.fetch;
   if (!analysis || !analysis.finding || !analysis.embedded.length) {
     return { ok: false, attempted: false, reason: 'no hay reescritura de host ajeno que sondar' };
@@ -183,7 +183,7 @@ async function probeProxy({ analysis, fetchImpl } = {}) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-    const res = await f(target, { signal: controller.signal, headers: { 'User-Agent': 'knkSuite-HLS-Audit/1.0', Range: 'bytes=0-0' }, redirect: 'manual' });
+    const res = await f(target, { signal: controller.signal, headers: { 'User-Agent': 'knkSuite-HLS-Audit/1.0', Range: 'bytes=0-0', ...(headers || {}) }, redirect: 'manual' });
     clearTimeout(timer);
     const latencyMs = Date.now() - started;
     const status = res.status;

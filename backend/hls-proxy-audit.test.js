@@ -137,6 +137,20 @@ const CDN_BODY = [
     const p = await audit.probeProxy({ analysis: safe, fetchImpl: async () => { throw new Error('no debe llamarse'); } });
     ok('sonda sin hallazgo: no se intenta nada', p.attempted === false);
   }
+  {
+    // Cabeceras del llamante: la sonda debe reenviarlas tal cual (cookie de
+    // sesión al auditar el proxy de KNK) y sin ellas no reventar.
+    const a = audit.analyzeManifest({ url: OPEN_PROXY_MANIFEST_URL, body: OPEN_PROXY_BODY });
+    let seen = null;
+    const p = await audit.probeProxy({
+      analysis: a,
+      fetchImpl: async (_url, opts) => { seen = opts.headers; return { status: 206 }; },
+      headers: { Cookie: 'knk_token=abc123' },
+    });
+    ok('sonda: reenvía la cookie del llamante', p.status === 206 && seen && seen.Cookie === 'knk_token=abc123');
+    const p2 = await audit.probeProxy({ analysis: a, fetchImpl: async () => ({ status: 206 }) });
+    ok('sonda: sin headers explícitos sigue funcionando', p2.status === 206 && p2.reachable === true);
+  }
 
   // ── 6) Conversión a hallazgo auditable ───────────────────────────────────
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'knk-hls-audit-'));
