@@ -49,7 +49,7 @@ app.get('*', (req, res) => {
 
 // ── WebSocket Alertas ───────────────────────────────────────────
 const alertHub = require('./lib/alert-hub');
-const wssAlerts = new WebSocketServer({ server, path: '/ws/alerts' });
+const wssAlerts = new WebSocketServer({ noServer: true });
 wssAlerts.on('connection', async (ws, req) => {
   if (!auth.authorize({ headers: req.headers, socket: req.socket })) {
     try { ws.close(1008, 'No autorizado'); } catch {}
@@ -60,7 +60,18 @@ wssAlerts.on('connection', async (ws, req) => {
 });
 
 // ── WebSocket Terminal ──────────────────────────────────────────
-const wss = new WebSocketServer({ server, path: '/ws/terminal' });
+const wss = new WebSocketServer({ noServer: true });
+
+// Un SOLO listener de upgrade que reparte por path. Con dos WebSocketServer
+// montados sobre el mismo http.Server, el que no coincidía con su path
+// destruía el socket con 400 antes de que el otro completara el handshake
+// (el terminal, construido en segundo lugar, nunca llegaba a conectarse).
+server.on('upgrade', (req, socket, head) => {
+  const { pathname } = new URL(req.url, 'http://x');
+  if (pathname === '/ws/terminal') wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  else if (pathname === '/ws/alerts') wssAlerts.handleUpgrade(req, socket, head, (ws) => wssAlerts.emit('connection', ws, req));
+  else socket.destroy();
+});
 
 let _ptyModule = null;
 let _ptyLoadAttempted = false;
