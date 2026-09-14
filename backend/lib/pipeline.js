@@ -16,6 +16,33 @@ const llmMod = require('./llm');
 const dockerMod = require('./docker');
 const { execSync } = require('child_process');
 
+function hostFromTarget(value) {
+  try { return new URL(String(value)).hostname; } catch { return require('./net').normalizeHost(value); }
+}
+
+function outOfScopeHost(host, entries) {
+  const h = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  return (Array.isArray(entries) ? entries : []).some((entry) => {
+    const e = String(entry || '').trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0];
+    if (!e) return false;
+    if (e.startsWith('*.')) return h === e.slice(2) || h.endsWith('.' + e.slice(2));
+    return h === e;
+  });
+}
+
+function targetGate(session, value, { approved = false } = {}) {
+  const net = require('./net');
+  const host = hostFromTarget(value);
+  if (!host || !Array.isArray(session.scope) || !session.scope.length || !net.inScope(host)
+      || outOfScopeHost(host, session.out_of_scope)) {
+    return 'Target fuera de scope o scope no definido';
+  }
+  if (approved && (session.opplan?.status !== 'aprobado' || session.opplan?.autorizado !== true)) {
+    return 'OPPLAN no aprobado o sin autorización escrita';
+  }
+  return null;
+}
+
 // ── Docker Kali helpers ──────────────────────────────
 let _dockerAvailable = null;
 function dockerReady() {
@@ -55,6 +82,9 @@ async function runPhase(ctx, phaseId, params = {}) {
       // Validar OPPLAN
       const opplan = session.opplan || {};
       if (!opplan.nombre) return { ...result, ok: false, error: 'No hay OPPLAN. Créalo primero.' };
+      if (opplan.status !== 'aprobado' || opplan.autorizado !== true) {
+        return { ...result, ok: false, error: 'OPPLAN pendiente: requiere aprobación y autorización escrita antes de cualquier tráfico externo.' };
+      }
       try {
         const v = opplanMod.validate(opplan);
         if (!v.ok) return { ...result, ok: false, error: `OPPLAN incompleto: ${v.pendientes.join(', ')}` };
@@ -69,31 +99,30 @@ async function runPhase(ctx, phaseId, params = {}) {
       const host = params.target || session.target;
       if (!host) return { ...result, ok: false, error: 'Sin target. Define objetivo.' };
       const net = require('./net');
+      const scopeError = targetGate(session, host, { approved: true });
+      if (scopeError) return { ...result, ok: false, error: `RECON bloqueado: ${scopeError}` };
       const h = net.normalizeHost(host);
       const proto = host.includes('://') ? host : `https://${h}`;
 
-      // Intentar subfinder via Docker Kali primero
-      let subs = [];
-      let subTool = 'crt.sh';
-      if (dockerReady()) {
-        const subRes = dockerExec('subfinder', `-d ${h} -silent -timeout 15`, 90000);
-        if (subRes.ok && subRes.output.trim()) {
-          subs = subRes.output.trim().split('\n').map(l => net.normalizeHost(l)).filter(Boolean);
-          subTool = 'subfinder (Docker)';
-        }
-      }
-      if (!subs.length) {
-        subs = await reconMod.subdomains(h);
-        subTool = 'crt.sh (fallback)';
-      }
+      // No se ejecuta subfinder automáticamente: sus múltiples consultas no
+      // pasan por el limiter global y podrían saltarse el Brief. La recon usa
+      // únicamente el módulo pasivo, sujeto al mismo scope/pacing de net.js.
+      let subs = await reconMod.subdomains(h);
+      const subTool = 'recon pasivo (crt.sh/fallback)';
+      net.setScope(session.scope || []);
+      subs = subs.filter((candidate) => net.inScope(candidate)
+        && !outOfScopeHost(candidate, session.out_of_scope));
 
       const urls = await reconMod.wayback(h, 200);
       const tech = await reconMod.techDetect(proto);
+      const cadenasCname = await reconMod.cnameChains(subs);
 
       result.output = {
         tool: subTool,
         subdominios: subs.slice(0, 50),
         totalSubs: subs.length,
+        cadenasCname,
+        totalCadenasCname: Object.keys(cadenasCname).length,
         urls: urls.slice(0, 20),
         totalUrls: urls.length,
         tecnologias: tech.tech,
@@ -102,10 +131,12 @@ async function runPhase(ctx, phaseId, params = {}) {
       };
 
       ctx.setArtifact('subdominios', subs);
+      ctx.setArtifact('cadenas_cname', cadenasCname);
       ctx.setArtifact('urls_historicas', urls);
       ctx.setArtifact('tech', tech.tech);
 
       if (subs.length) result.findings.push({ type: 'RECON', summary: `${subs.length} subdominios (${subTool})`, severity: 'info' });
+      if (Object.keys(cadenasCname).length) result.findings.push({ type: 'RECON', summary: `${Object.keys(cadenasCname).length} cadenas CNAME`, severity: 'info' });
       if (urls.length) result.findings.push({ type: 'RECON', summary: `${urls.length} URLs históricas`, severity: 'info' });
       result.findings.push({ type: 'RECON', summary: `Tech: ${tech.tech.slice(0, 5).join(', ') || 'sin firma clara'}`, severity: 'info' });
       break;
@@ -114,6 +145,8 @@ async function runPhase(ctx, phaseId, params = {}) {
     case 'scan': {
       const url = params.url || (session.target ? (session.target.includes('://') ? session.target : `https://${session.target}`) : null);
       if (!url) return { ...result, ok: false, error: 'Sin URL. Define objetivo o pasa url.' };
+      const scopeError = targetGate(session, url, { approved: true });
+      if (scopeError) return { ...result, ok: false, error: `SCAN bloqueado: ${scopeError}` };
 
       const hdrs = await scannerMod.securityHeaders(url);
       const cors = await scannerMod.corsProbe(url);
@@ -140,32 +173,58 @@ async function runPhase(ctx, phaseId, params = {}) {
       const url = params.url || (session.target ? (session.target.includes('://') ? session.target : `https://${session.target}`) : null);
       if (!url) return { ...result, ok: false, error: 'Sin URL para fuzz.' };
 
-      // Stealth mode: sin ffuf automático, solo wordlist conservadora
+      // Fuzzing únicamente manual-confirmado; nunca hay un bypass del limiter.
       const safeUrl = url.includes('://') ? url : `https://${url}`;
-      const isStealth = params.stealth !== false;
-      if (isStealth && dockerReady() && params.full !== true) {
-        // Recomendar no hacer fuzz masivo
+      const activeAuth = require('./auth');
+      if (!activeAuth.safeUrl(safeUrl)) return { ...result, ok: false, error: 'URL no válida para fuzz.' };
+      const scopeError = targetGate(session, safeUrl, { approved: true });
+      if (scopeError) return { ...result, ok: false, error: `FUZZ bloqueado: ${scopeError}` };
+      if (params.manualConfirm !== true) {
         result.output = {
-          warning: '⚠️  Fuzz masivo desactivado en modo stealth. Usa {full:true} solo con autorización explícita.',
-          mode: 'stealth',
-          maxPaths: 15,
-          concurrency: 1,
-          delayMin: 2000,
+          warning: '⏸ Fuzz pausado: requiere confirmación manual tras revisar scope, cuenta propia y Brief.',
+          mode: 'manual-paced', maxPaths: 15, concurrency: 1,
+          rateLimitMs: require('./net').getRateLimit(),
+          stopOn: ['429/430/509', '503', 'dos respuestas 403 consecutivas', 'fuera de scope'],
         };
-        result.findings.push({ type: 'INFO', summary: 'Fuzz en modo stealth (15 paths máximo, 2-4s delay)', severity: 'info' });
+        result.findings.push({ type: 'INFO', summary: 'Fuzz preparado, pendiente de confirmación manual (máximo 15 rutas)', severity: 'info' });
+      } else if (session.opplan?.status !== 'aprobado' || session.opplan?.autorizado !== true) {
+        result.output = {
+          warning: '⏸ Fuzz bloqueado: el OPPLAN debe estar aprobado y la autorización escrita debe ser verdadera.',
+          mode: 'manual-paced', maxPaths: 15, concurrency: 1,
+          rateLimitMs: require('./net').getRateLimit(),
+        };
+        result.findings.push({ type: 'INFO', summary: 'Fuzz bloqueado por OPPLAN/autorización pendiente', severity: 'info' });
       } else {
-        const fres = await fuzzerMod.fuzz(safeUrl, { concurrency: 1, stealth: isStealth, tool: dockerReady() ? 'stealth-native' : 'native' });
-        result.output = { tool: fres.tool, baseline: fres.baseline, total: fres.total, findings: fres.findings.slice(0, 15), stealth: fres.stealth };
+        const fres = await fuzzerMod.fuzz(safeUrl, { maxPaths: 15, tool: 'manual-paced', manualConfirm: true, scopeApproved: true });
+        result.output = { tool: fres.tool, baseline: fres.baseline, total: fres.total, requestsMade: fres.requestsMade, findings: fres.findings.slice(0, 15), pacing: fres.pacing };
         if (fres.findings.length) result.findings.push({ type: 'FUZZ', summary: `${fres.findings.length} rutas interesantes (${fres.tool})`, severity: 'info' });
+        if (fres.pacing.stoppedReason) result.findings.push({ type: 'INFO', summary: `Fuzz detenido: ${fres.pacing.stoppedReason}`, severity: 'info' });
       }
       break;
     }
 
     case 'exploit': {
-      // Las compuertas son interactivas — desde la API solo mostramos los candidatos disponibles
-      result.output = {
-        message: 'Usa las compuertas (cors, idor, ssrf, xss, sub) para validar candidatos manualmente.',
-        gates: ['cors', 'idor', 'ssrf', 'xss', 'sub'],
+      // Las compuertas son interactivas — desde la API mostramos los candidatos disponibles
+      // incl. las clases de LÓGICA DE NEGOCIO (biz) y su playbook.
+      const gatesMod = require('./gates');
+      const bizraceMod = require('./bizrace');
+      const clasesBiz = gatesMod.bizClases || [];
+      result.output = {          message: 'Usa las compuertas (cors, idor, ssrf, xss, sub, biz, revocation) para validar candidatos manualmente. Las peticiones de la suite pasan por el limiter global; no ejecutes comandos externos para saltártelo.',
+        gates: ['cors', 'idor', 'ssrf', 'xss', 'sub', 'biz', 'revocation'],
+        revocation: {
+          disponible: true,
+          helper: 'POST /api/revocation/plan { resourceType: file|conversation } y POST /api/revocation/analyze con evidencia ya capturada',
+          regla: 'Solo dos cuentas propias, recurso sintético, revocación normal y comprobación posterior; no enumera ni ejecuta tráfico por sí mismo.',
+        },
+        bizMetodologia: {
+          playbook: (gatesMod.bizPlaybook || []).map((p) => `${p.paso}. ${p.nombre}`),
+          clases: clasesBiz.map((c) => ({ id: c.id, nombre: c.nombre, superficie: c.superficie, tecnica: c.tecnica })),
+        },
+        bizRace: {
+          disponible: true,
+          helper: 'POST /api/biz/race  { url, metodo, cuerpo, n, manualConfirm:true } — ronda acotada, espaciada por el limiter global y con máximo 3 peticiones',
+          clase: 'biz-race (TOCTOU en operaciones single-use)',
+        },
       };
       break;
     }

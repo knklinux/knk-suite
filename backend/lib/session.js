@@ -36,13 +36,24 @@ function load(file = DEFAULT_FILE) {
 }
 
 function save(file, session) {
+  // Guardia contra persistencia silenciosa: save(file, session) — el 1er arg es
+  // el ARCHIVO y el 2º la SESIÓN. Llamar save() sin la sesión (bug histórico que
+  // hizo perder cierres/notas) lanza error en vez de devolver false en silencio.
+  if (arguments.length < 2 || !session || typeof session !== 'object') {
+    throw new Error('save(file, session): falta la sesión (2º argumento). Firmas válidas: save(file, session) o save(DEFAULT_FILE, s).');
+  }
   try {
     if (!file) file = DEFAULT_FILE;
     fs.mkdirSync(path.dirname(file), { recursive: true });
     session.updatedAt = new Date().toISOString();
     fs.writeFileSync(file, JSON.stringify(session, null, 2), 'utf8');
     return true;
-  } catch { return false; }
+  } catch (e) {
+    // Error real de escritura (permisos/disco): no silenciar, devolver false
+    // para que el llamador lo detecte (los scripts .cjs ya comprueban el retorno).
+    console.error('[session.save] error escribiendo ' + file + ': ' + e.message);
+    return false;
+  }
 }
 
 function addFinding(session, finding) {

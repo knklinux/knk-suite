@@ -1,10 +1,35 @@
 node_modules/
 frontend/node_modules/
 frontend/dist/
+desktop/node_modules/
+desktop/dist/
+desktop/out/
 *.db
 *.db-wal
 *.db-shm
 .env
+.env.*
+config.local.json
 *.log
 /tmp/
 workspace/reportes/*.json
+
+# Runtime and local evidence
+runtime/
+.evidencia-takeover/
+evidencia-poc/http/*.txt
+evidencia-poc/http/*cookies*
+
+# Desktop packaging
+release/
+*.exe
+*.msi
+*.nsis.7z
+*.blockmap
+
+# OS/editor
+Desktop.ini
+Thumbs.db
+
+# Tauri build artifacts
+src-tauri/target/

@@ -63,11 +63,17 @@ function isValidDomain(d) {
  * Detecta la plataforma desde la URL.
  */
 function detectPlatform(url) {
-  if (/yeswehack\.com/i.test(url)) return 'yeswehack';
-  if (/hackerone\.com/i.test(url)) return 'hackerone';
-  if (/bugcrowd\.com/i.test(url)) return 'bugcrowd';
-  if (/intigriti\.com/i.test(url)) return 'intigriti';
-  return 'unknown';
+  let hostname = '';
+  try { hostname = new URL(String(url)).hostname.toLowerCase().replace(/^www\./, ''); }
+  catch { return 'unknown'; }
+  const platforms = [
+    ['yeswehack', 'yeswehack.com'],
+    ['hackerone', 'hackerone.com'],
+    ['bugcrowd', 'bugcrowd.com'],
+    ['intigriti', 'intigriti.com'],
+  ];
+  const match = platforms.find(([, base]) => hostname === base || hostname.endsWith(`.${base}`));
+  return match ? match[0] : 'unknown';
 }
 
 /**
@@ -207,6 +213,32 @@ function parseHackerOne(url) {
 }
 
 /**
+ * Bugcrowd: SPA — no scrapeable server-side.
+ * Devuelve modo guiado con la política del Código de Conducta Bugcrowd precargada.
+ * La suite activa compliance-bugcrowd.json automáticamente al fijar esta sesión.
+ */
+function parseBugcrowd(url) {
+  const slug = url.split('/').filter(Boolean).pop() || '';
+  const programName = slug.replace(/-/g, ' ').replace(/bug.?bounty.*/i, '').trim();
+
+  return {
+    source: 'bugcrowd',
+    autoParsed: false,
+    programUrl: url,
+    programName: programName || 'Programa Bugcrowd',
+    target: '',
+    domains: [],
+    outOfScope: [],
+    userAgent: '',
+    policy: 'Código de Conducta Bugcrowd: divulgación coordinada (programas privados confidenciales) | informe completo inicial (no marcadores de posición) | mínimo acceso a datos (PII → detener) | GenAI solo con revisión humana | CVSS 3.1',
+    rewards: 'Consultar Brief del programa (la tabla de recompensas prevalece)',
+    rateLimit: 1000,
+    note: '⚠️  Bugcrowd es una SPA — no scrapeable automáticamente. Pega manualmente los dominios del scope desde la tabla de scopes del Brief.',
+    hint: 'La política del Código de Conducta Bugcrowd se activa en la pestaña Cumplimiento al fijar este programa. OJO: el Brief concreto puede ser más restrictivo — prevalece sobre la política general.',
+  };
+}
+
+/**
  * Bugcrowd / Intigriti: similar a HackerOne — SPAs.
  */
 function parseOther(url, platform) {
@@ -230,7 +262,13 @@ function parseOther(url, platform) {
  * Parser unificado: auto-detecta plataforma y aplica la estrategia correcta.
  */
 async function parseProgram(url) {
-  const platform = detectPlatform(url);
+  let parsed;
+  try { parsed = new URL(String(url)); } catch { return { error: 'URL de programa inválida' }; }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    return { error: 'La URL del programa debe ser HTTP(S) y no contener credenciales' };
+  }
+  const platform = detectPlatform(parsed.toString());
+  if (platform === 'unknown') return { error: 'URL fuera de las plataformas admitidas' };
 
   switch (platform) {
     case 'yeswehack':
@@ -238,6 +276,7 @@ async function parseProgram(url) {
     case 'hackerone':
       return parseHackerOne(url);
     case 'bugcrowd':
+      return parseBugcrowd(url);
     case 'intigriti':
       return parseOther(url, platform);
     default:
@@ -245,4 +284,4 @@ async function parseProgram(url) {
   }
 }
 
-module.exports = { parseProgram, parseYesWeHack, parseHackerOne, detectPlatform };
+module.exports = { parseProgram, parseYesWeHack, parseHackerOne, parseBugcrowd, detectPlatform };

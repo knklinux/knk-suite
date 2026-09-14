@@ -4,6 +4,7 @@
 // KNK SUITE v2 — Recon pasivo (crt.sh, wayback, tech detect)
 // ============================================================================
 
+const dns = require('dns').promises;
 const { getJson, getText, qs, normalizeHost, fetch } = require('./net');
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
@@ -14,7 +15,7 @@ async function subdomains(domain) {
   const out = new Set();
   // crt.sh
   try {
-    const data = await getJson(`https://crt.sh/?q=${qs('%.' + host)}&output=json`, { timeoutMs: 30000 });
+    const data = await getJson(`https://crt.sh/?q=${qs('%.' + host)}&output=json`, { timeoutMs: 60000 });
     if (Array.isArray(data)) {
       for (const row of data) {
         for (const n of String(row.name_value || '').split('\n')) {
@@ -35,6 +36,40 @@ async function subdomains(domain) {
     }
   }
   return [...out].sort();
+}
+
+// Devuelve los destinos CNAME encadenados de un host, sin generar tráfico HTTP.
+// Un DNS que no tenga CNAME devuelve una cadena vacía; el límite evita bucles.
+async function cnameChain(host, maxHops = 8) {
+  let current = normalizeHost(host).replace(/\.$/, '');
+  const chain = [];
+  const seen = new Set();
+  for (let hop = 0; current && hop < maxHops && !seen.has(current); hop++) {
+    seen.add(current);
+    let aliases;
+    try {
+      // DNS también es interacción de red: respeta el mismo limiter global.
+      const netMod = require('./net');
+      await netMod.waitForSlot();
+      aliases = await dns.resolveCname(current);
+    } catch {
+      break;
+    }
+    const next = normalizeHost(aliases[0] || '').replace(/\.$/, '');
+    if (!next || next === current) break;
+    chain.push(next);
+    current = next;
+  }
+  return chain;
+}
+
+async function cnameChains(hosts) {
+  const out = {};
+  for (const host of (Array.isArray(hosts) ? hosts.slice(0, 50) : [])) {
+    const chain = await cnameChain(host);
+    if (chain.length) out[normalizeHost(host)] = chain;
+  }
+  return out;
 }
 
 async function wayback(domain, limit = 300) {
@@ -91,4 +126,4 @@ async function emails(domain, limit = 10) {
   return [...found];
 }
 
-module.exports = { subdomains, wayback, techDetect, emails };
+module.exports = { subdomains, cnameChain, cnameChains, wayback, techDetect, emails };

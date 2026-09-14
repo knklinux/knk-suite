@@ -1,12 +1,12 @@
 'use strict';
 
 // ============================================================================
-// KNK SUITE v2 — Fuzzer (stealth, conservative, human-like)
+// KNK SUITE v2 — Fuzzer conservador y manual-paced
 // ============================================================================
 
 const fs = require('fs');
 const path = require('path');
-const { fetch } = require('./net');
+const netMod = require('./net');
 
 const WORDLIST = path.join(__dirname, '..', '..', 'data', 'common.txt');
 
@@ -19,43 +19,63 @@ function loadWordlist() {
 }
 
 async function fuzz(baseUrl, opts = {}) {
-  // Stealth mode: máximo 15 paths, concurrency 1, delay 2-4s
-  const isStealth = opts.stealth !== false;
-  const concurrency = isStealth ? 1 : (opts.concurrency || 3);
-  const delayMs = isStealth ? (2000 + Math.floor(Math.random() * 2000)) : (opts.delayMs || 300);
-  const allWords = opts.wordlist || loadWordlist();
-  const words = isStealth ? allWords.slice(0, 15) : allWords; // max 15 paths en stealth
-
+  // El fuzzing de la suite es secuencial y está sujeto al limitador global.
+  // La confirmación es deliberadamente obligatoria también en la API de módulo,
+  // para que ningún caller interno pueda convertirlo en un escáner automático.
+  const maxPaths = Math.min(15, Math.max(1, Number(opts.maxPaths) || 15));
+  const pacingBase = { mode: 'manual-confirmation-required', concurrency: 1, rateLimitMs: netMod.getRateLimit(), maxPaths: 15, stoppedReason: 'manual-confirmation-required' };
+  if (opts.manualConfirm !== true || opts.scopeApproved !== true) {
+    return { tool: opts.tool || 'manual-paced', baseline: null, total: 0, requestsMade: 0, findings: [], pacing: { ...pacingBase, stoppedReason: opts.manualConfirm === true ? 'scope-approval-required' : 'manual-confirmation-required' } };
+  }
+  const allWords = Array.isArray(opts.wordlist) ? opts.wordlist : loadWordlist();
+  const words = allWords
+    .map((word) => String(word).trim())
+    .filter((word) => /^[A-Za-z0-9._~-]{1,100}$/.test(word))
+    .slice(0, maxPaths);
   const base = String(baseUrl).replace(/\/+$/, '');
-  const baselineR = await fetch(`${base}/__knk_baseline_${Date.now()}.txt`, { timeoutMs: 15000 });
+  let stoppedReason = null;
+  let requestsMade = 0;
+  let consecutiveForbidden = 0;
+  const baselineR = await netMod.fetch(`${base}/__knk_baseline_${Date.now()}.txt`, { timeoutMs: 15000 });
+  requestsMade += 1;
   const baseline = baselineR.status;
   const findings = [];
-  let idx = 0;
-
-  const worker = async () => {
-    while (idx < words.length) {
-      const w = words[idx++];
-      const url = `${base}/${w}`;
-      try {
-        const r = await fetch(url, { timeoutMs: 15000 });
-        const interesting = r.status !== baseline && ![404, 405].includes(r.status);
-        if (interesting || r.status === 401 || r.status === 403) {
-          findings.push({ path: `/${w}`, status: r.status, size: (r.text || '').length, location: r.headers.location || '' });
-        }
-      } catch { /* skip */ }
-      // Stealth: delay variable entre requests
-      if (isStealth) await new Promise(res => setTimeout(res, 1500 + Math.floor(Math.random() * 2500)));
-      else await new Promise(res => setTimeout(res, delayMs));
+  if (baselineR.outOfScope || baselineR.blocked) {
+    return {
+      tool: opts.tool || 'manual-paced', baseline, total: words.length, requestsMade,
+      findings, pacing: { ...pacingBase, mode: 'sequential-global-limiter', stoppedReason: 'out-of-scope' },
+    };
+  }
+  if ([429, 430, 509].includes(baseline)) {
+    return { tool: opts.tool || 'manual-paced', baseline, total: words.length, requestsMade, findings,
+      pacing: { ...pacingBase, mode: 'sequential-global-limiter', stoppedReason: `rate-limit-${baseline}` } };
+  }
+  if (baseline === 503) {
+    return { tool: opts.tool || 'manual-paced', baseline, total: words.length, requestsMade, findings,
+      pacing: { ...pacingBase, mode: 'sequential-global-limiter', stoppedReason: 'service-unavailable' } };
+  }
+  for (const w of words) {
+    const url = `${base}/${w}`;
+    let r;
+    try { r = await netMod.fetch(url, { timeoutMs: 15000 }); } catch { continue; }
+    requestsMade += 1;
+    if (r.outOfScope || r.blocked) { stoppedReason = 'out-of-scope'; break; }
+    if ([429, 430, 509].includes(r.status)) { stoppedReason = `rate-limit-${r.status}`; break; }
+    if (r.status === 503) { stoppedReason = 'service-unavailable'; break; }
+    consecutiveForbidden = r.status === 403 ? consecutiveForbidden + 1 : 0;
+    if (consecutiveForbidden >= 2) { stoppedReason = 'repeated-forbidden'; break; }
+    const interesting = r.status !== baseline && ![404, 405].includes(r.status);
+    if (interesting || r.status === 401 || r.status === 403) {
+      findings.push({ path: `/${w}`, status: r.status, size: (r.text || '').length, location: r.headers.location || '' });
     }
-  };
-  await Promise.all(Array.from({ length: concurrency }, worker));
+  }
 
-  const sorted = findings.sort((a, b) => a.path.localeCompare(b.path));
   return {
-    tool: opts.tool || (isStealth ? 'stealth' : 'native'),
-    baseline, total: words.length, findings: sorted,
-    stealth: isStealth,
+    tool: opts.tool || 'manual-paced',
+    baseline, total: words.length, requestsMade,
+    findings: findings.sort((a, b) => a.path.localeCompare(b.path)),
+    pacing: { mode: 'sequential-global-limiter', concurrency: 1, rateLimitMs: netMod.getRateLimit(), maxPaths: 15, stoppedReason },
   };
 }
 
-module.exports = { fuzz, loadWordlist };
+module.exports = { fuzz, loadWordlist, MAX_PATHS: 15 };

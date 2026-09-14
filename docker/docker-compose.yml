@@ -5,10 +5,14 @@ services:
     build:
       context: .
       dockerfile: kali.Dockerfile
+    image: knk-kali:latest
     container_name: knk-kali
     hostname: knk-kali
     volumes:
       - ../data:/data
       - ../workspace:/workspace
     restart: unless-stopped
-    command: ["echo '🐉 Kali listo. Herramientas: \$(which nmap ffuf nuclei subfinder amass 2>/dev/null | tr \"\\n\" \" \")'; sleep infinity"]
+    # El command anterior tenía el quoting roto (el $() no se expandía
+    # y el array JSON mezclaba comillas mal). Este es simple y robusto;
+    # lista las herramientas al arrancar y mantiene el contenedor vivo.
+    command: ["/bin/bash", "-c", "echo 'Kali listo. Herramientas:'; which nmap ffuf nuclei subfinder amass whatweb dirb; sleep infinity"]
