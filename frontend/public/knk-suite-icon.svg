@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">knkLinux</title>
+  <desc id="desc">Neon cyan and violet terminal icon for knkLinux</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#08264a"/><stop offset="1" stop-color="#080817"/></linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#66edff"/><stop offset=".5" stop-color="#08b9ff"/><stop offset="1" stop-color="#6b3cff"/></linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="42" fill="url(#bg)" stroke="#08b9ff" stroke-width="6"/>
+  <path d="M45 83h166M45 178h166" stroke="#b12cff" stroke-opacity=".42" stroke-width="3"/>
+  <path d="M58 103l27 24-27 24" fill="none" stroke="url(#cyan)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M103 151h42" stroke="#fff" stroke-opacity=".9" stroke-width="11" stroke-linecap="round"/>
+  <path d="M174 102c-25 0-43 15-43 32s18 32 43 32c17 0 29-6 37-16-11 2-20-4-20-16s9-18 20-16c-8-10-20-16-37-16z" fill="url(#cyan)" filter="url(#glow)"/>
+  <ellipse cx="176" cy="134" rx="7" ry="22" fill="#080817"/><circle cx="180" cy="125" r="4" fill="#fff"/>
+  <text x="128" y="207" text-anchor="middle" fill="#66edff" font-family="monospace" font-size="15" font-weight="700" letter-spacing="3">knkLinux</text>
+</svg>

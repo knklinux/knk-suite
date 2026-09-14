@@ -19,8 +19,6 @@ const TOOL_CATEGORIES = {
     { label: 'nikto', cmd: 'nikto -h http://TARGET' },
     { label: 'ffuf dirs', cmd: 'ffuf -u http://TARGET/FUZZ -w /usr/share/wordlists/dirb/common.txt -mc 200,301,302,403 -t 1' },
     { label: 'ffuf vhost', cmd: 'ffuf -u http://TARGET -H "Host: FUZZ.TARGET" -w /usr/share/wordlists/dirb/common.txt -mc 200' },
-    { label: 'sqlmap basic', cmd: "sqlmap -u 'http://TARGET/?id=1' --batch" },
-    { label: 'sqlmap forms', cmd: "sqlmap -u 'http://TARGET/' --forms --batch" },
     { label: 'curl headers', cmd: 'curl -sI http://TARGET' },
     { label: 'curl CORS', cmd: 'curl -sI -H "Origin: http://evil.local" http://TARGET' },
     { label: 'curl cookie', cmd: 'curl -s -b "session=abc123" http://TARGET/api/users' },
@@ -32,7 +30,7 @@ const TOOL_CATEGORIES = {
     { label: 'john hash', cmd: 'john --wordlist=/usr/share/wordlists/rockyou.txt hash.txt' },
     { label: 'john show', cmd: 'john --show hash.txt' },
   ],
-  '📡 Network': [
+  '📡 Red': [
     { label: 'nc listen', cmd: 'nc -lvnp 4444' },
     { label: 'nc connect', cmd: 'nc TARGET PORT' },
     { label: 'ping sweep', cmd: 'nmap -sn 192.168.1.0/24' },
@@ -44,7 +42,7 @@ const TOOL_CATEGORIES = {
     { label: 'ssl cert', cmd: 'openssl s_client -connect TARGET:443 </dev/null 2>/dev/null | openssl x509 -text -noout' },
     { label: 'ssl ciphers', cmd: 'nmap --script ssl-enum-ciphers -p 443 TARGET' },
   ],
-  '📦 Forensics': [
+  '📦 Forense': [
     { label: 'binwalk', cmd: 'binwalk FILE' },
     { label: 'steghide info', cmd: 'steghide info FILE' },
     { label: 'steghide extract', cmd: 'steghide extract -sf FILE -p ""' },
@@ -52,11 +50,11 @@ const TOOL_CATEGORIES = {
     { label: 'strings', cmd: 'strings FILE | head -50' },
     { label: 'file type', cmd: 'file FILE' },
   ],
-  '🎓 Labs': [
+  '🎓 Laboratorio': [
     { label: 'nmap localhost', cmd: 'nmap -sV -sC localhost' },
     { label: 'nmap DVWA', cmd: 'nmap -sV -p 80 localhost' },
     { label: 'nikto DVWA', cmd: 'nikto -h http://localhost' },
-    { label: 'sqlmap DVWA', cmd: "sqlmap -u 'http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='PHPSESSID=abc; security=low' --batch" },
+    { label: 'SQLi local — usa la compuerta', cmd: 'echo "SQLi bloqueada: usa /api/gates/validate type=sqli"' },
     { label: 'ffuf DVWA', cmd: 'ffuf -u http://localhost/FUZZ -w /usr/share/wordlists/dirb/common.txt -mc 200,301 -t 1' },
     { label: 'hydra DVWA', cmd: 'hydra -l admin -P /usr/share/wordlists/rockyou.txt localhost http-post-form "/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed"' },
     { label: 'msfconsole', cmd: 'msfconsole -q' },
@@ -64,11 +62,13 @@ const TOOL_CATEGORIES = {
   ],
 };
 
-export default function Terminal() {
+export default function Terminal({ api, sendCmd, onCmdConsumed, onOpenGuide }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const wsRef = useRef(null);
   const [connected, setConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
+  const [dockerStatus, setDockerStatus] = useState(null);
   const [activeCategory, setActiveCategory] = useState('🔍 Recon');
 
   useEffect(() => {
@@ -125,6 +125,7 @@ export default function Terminal() {
     wsRef.current = ws;
 
     ws.onopen = () => {
+      setConnectionError('');
       setConnected(true);
       term.writeln('\x1b[32m✓ Conectado a Kali Docker\x1b[0m');
       term.writeln('');
@@ -135,12 +136,18 @@ export default function Terminal() {
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'output') term.write(msg.data);
+        if (msg.type === 'error') {
+          setConnectionError(msg.data || 'La terminal no está disponible');
+          term.writeln(`\r\n\x1b[31m✗ ${msg.data || 'La terminal no está disponible'}\x1b[0m`);
+        }
       } catch {}
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setConnected(false);
-      term.writeln('\x1b[31m✗ Desconectado\x1b[0m');
+      const reason = event.reason || 'WebSocket cerrado: Docker Kali puede estar apagado';
+      setConnectionError(reason);
+      term.writeln(`\r\n\x1b[31m✗ ${reason}\x1b[0m`);
     };
 
     term.onData((data) => {
@@ -161,12 +168,39 @@ export default function Terminal() {
     };
   }, []);
 
+  useEffect(() => {
+    api?.('/docker/status').then(setDockerStatus).catch(() => setDockerStatus({
+      available: false, running: false, reason: 'No se pudo consultar el estado de Docker',
+    }));
+  }, [api]);
+
+  const retryConnection = async () => {
+    setConnectionError('Comprobando Docker y el contenedor…');
+    try {
+      const result = await api?.('/docker/start', { method: 'POST', body: '{}' });
+      setDockerStatus(result);
+      if (result?.ok) window.location.reload();
+      else setConnectionError(result?.reason || result?.error || 'Docker/Kali no está disponible');
+    } catch {
+      setConnectionError('No se pudo contactar con el backend local');
+    }
+  };
+
   const insertCmd = (cmd) => {
     if (termRef.current && wsRef.current?.readyState === 1) {
       wsRef.current.send(JSON.stringify({ type: 'input', data: cmd + '\n' }));
       termRef.current.focus();
     }
   };
+
+  // Inyecta el comando encolado desde la guía manual (cheat sheet) cuando
+  // la terminal ya está lista (una sola vez, luego se limpia la cola).
+  useEffect(() => {
+    if (sendCmd && connected && termRef.current) {
+      insertCmd(sendCmd.cmd);
+      onCmdConsumed?.();
+    }
+  }, [sendCmd, connected, onCmdConsumed]);
 
   const tools = TOOL_CATEGORIES[activeCategory] || [];
 
@@ -195,7 +229,22 @@ export default function Terminal() {
             <h3 style={{ color: connected ? 'var(--green)' : 'var(--red)' }}>
               {connected ? '●' : '○'} Kali Docker
             </h3>
-            <span className="muted">{connected ? 'Activo' : 'Desconectado'}</span>
+            <span className="muted">{connected ? 'Activo' : (dockerStatus?.reason || 'Desconectado')}</span>
+          </div>
+
+          <div className="card" style={{ marginTop: 8 }}>
+            <h3>🎯 Guía manual</h3>
+            <p className="muted" style={{ fontSize: 10 }}>
+              Reglas, flujo, compuertas y comandos al lado de la terminal.
+            </p>
+            <button
+              className="btn btn-sm btn-outline"
+              style={{ width: '100%', marginTop: 4 }}
+              onClick={onOpenGuide}
+              disabled={!onOpenGuide}
+            >
+              📖 Abrir chuleta
+            </button>
           </div>
 
           <div className="card" style={{ marginTop: 8 }}>
@@ -213,7 +262,7 @@ export default function Terminal() {
           </div>
 
           <div className="card" style={{ marginTop: 8 }}>
-            <h3>📖 Labs</h3>
+            <h3>📖 Laboratorio</h3>
             <p className="muted" style={{ fontSize: 10 }}>
               Practica en entornos seguros:
             </p>
@@ -238,10 +287,21 @@ export default function Terminal() {
             }}>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>🐉 kali@knk-suite — bash</span>
               <span style={{ fontSize: 10, color: connected ? 'var(--green)' : 'var(--red)' }}>
-                {connected ? '● Connected' : '○ Disconnected'}
+                {connected ? '● Conectado' : '○ Desconectado'}
               </span>
             </div>
             <div ref={containerRef} style={{ background: '#0a0e14', minHeight: 450, padding: 4 }} />
+            {!connected && <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
+              <div style={{ color: 'var(--yellow)', fontSize: 12 }}>
+                {connectionError || dockerStatus?.reason || 'Conectando con la terminal…'}
+              </div>
+              <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                En Windows necesitas Docker Desktop iniciado y el contenedor <code>knk-kali</code> en ejecución.
+              </div>
+              <button className="btn btn-sm btn-outline" style={{ marginTop: 6 }} onClick={retryConnection}>
+                🐳 Iniciar/reintentar Docker Kali
+              </button>
+            </div>}
           </div>
         </div>
       </div>

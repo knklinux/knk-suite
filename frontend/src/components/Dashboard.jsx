@@ -1,110 +1,137 @@
 import React, { useState, useEffect } from 'react';
 
-export default function Dashboard({ api, status }) {
-  const [session, setSession] = useState({});
-  const [programUrl, setProgramUrl] = useState('');
-  const [target, setTarget] = useState('');
-  const [scope, setScope] = useState('');
-  const [ua, setUa] = useState('');
-  const [toast, setToast] = useState('');
+const SEVERITY_COLORS = {
+  critical: 'var(--red)',
+  high: '#f97316',
+  medium: 'var(--yellow)',
+  low: '#3b82f6',
+  info: 'var(--muted)',
+};
+
+const SEVERITY_LABELS = { critical: 'Crítico', high: 'Alto', medium: 'Medio', low: 'Bajo', info: 'Info' };
+
+export default function Dashboard({ api }) {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api('/session').then(s => {
-      setSession(s);
-      setTarget(s.target || '');
-      setScope((s.scope || []).join(', '));
-      setProgramUrl(s.program_url || '');
-      setUa(s.user_agent || '');
-    });
+    api('/dashboard/stats')
+      .then(setStats)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [api]);
 
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+  if (loading) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: 40 }}>
+        <span className="muted">Cargando dashboard...</span>
+      </div>
+    );
+  }
 
-  const autoParse = async () => {
-    if (!programUrl) return showToast('Pega la URL del programa');
-    showToast('🔍 Analizando...');
-    const r = await api('/parse-program', { method: 'POST', body: JSON.stringify({ url: programUrl }) });
-    if (r.ok) {
-      setTarget(r.parsed.target);
-      setScope(r.parsed.domains.join(', '));
-      setUa(r.parsed.userAgent || '');
-      showToast('✅ ' + r.parsed.programName + ' — ' + r.parsed.domains.length + ' dominios');
-    } else showToast('❌ ' + (r.error || 'Error'));
+  if (!stats) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: 40 }}>
+        <span className="muted">No se pudieron cargar las estadísticas</span>
+      </div>
+    );
+  }
+
+  const { totalSessions, totalFindings, totalReports, findingsBySeverity, recentActivity, uptimeSeconds } = stats;
+
+  const formatUptime = (s) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${sec}s`;
+    return `${sec}s`;
   };
 
-  const fixTarget = async () => {
-    if (!target) return showToast('Define el objetivo');
-    const r = await api('/target', { method: 'POST', body: JSON.stringify({ target, scope, userAgent: ua, rateLimitMs: 2000, programUrl }) });
-    if (r.ok) showToast('✅ Objetivo fijado — ' + r.scope.length + ' dominios');
-  };
-
-  const findings = session.findings || [];
-  const phases = session.phases || {};
-  const pipelinePhases = ['plan', 'recon', 'scan', 'fuzz', 'exploit', 'reporte', 'verificar'];
+  const maxSeverity = Math.max(...Object.values(findingsBySeverity), 1);
 
   return (
     <div>
-      <h2>📊 Dashboard</h2>
-
-      {toast && <div className="toast">{toast}</div>}
-
-      <div className="card">
-        <h3>⚡ Setup rápido</h3>
-        <input placeholder="URL del programa (YesWeHack/HackerOne)" value={programUrl} onChange={e => setProgramUrl(e.target.value)} />
-        <button className="btn btn-sm" onClick={autoParse} style={{ marginRight: 8 }}>🔍 Auto-rellenar</button>
-        <span className="muted">Pega la URL y la suite extrae scope, UA, políticas</span>
-        <input placeholder="Target (ej: example.com)" value={target} onChange={e => setTarget(e.target.value)} />
-        <input placeholder="Scope (ej: *.example.com)" value={scope} onChange={e => setScope(e.target.value)} />
-        <input placeholder="User-Agent (según política)" value={ua} onChange={e => setUa(e.target.value)} />
-        <button className="btn" onClick={fixTarget}>Fijar objetivo</button>
+      <div style={{
+        position: 'relative', borderRadius: 12, overflow: 'hidden',
+        border: '1px solid var(--border)',
+        boxShadow: '0 0 32px rgba(8,216,255,0.18), 0 0 72px rgba(177,44,255,0.12)',
+      }}>
+        <img src="knklinux-hub.png" alt="knkLinux Security Workbench"
+          style={{ width: '100%', height: 230, objectFit: 'cover', objectPosition: 'center 28%', display: 'block' }} />
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: 'linear-gradient(90deg, rgba(2,6,12,0.82) 0%, rgba(2,6,12,0.45) 38%, transparent 65%), linear-gradient(transparent 55%, rgba(2,6,12,0.88) 100%)',
+        }} />
+        <div style={{ position: 'absolute', left: 18, bottom: 40 }}>
+          <span className="eyebrow">DASHBOARD</span>
+          <h2 style={{ margin: '2px 0 0', textShadow: '0 2px 12px rgba(0,0,0,0.9)' }}>Métricas del workbench</h2>
+        </div>
+        <span className="badge badge-ok" style={{ position: 'absolute', top: 12, right: 12, backdropFilter: 'blur(4px)' }}>ACTIVO</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="module-grid" style={{ marginBottom: 16, marginTop: -26, position: 'relative', padding: '0 12px' }}>
         <div className="card">
-          <h3>📋 OPPLAN</h3>
-          {session.opplan?.nombre ? (
-            <>
-              <div className="kv"><span className="k">Nombre</span><span className="v">{session.opplan.nombre}</span></div>
-              <div className="kv"><span className="k">Estado</span><span className="v"><span className={`badge ${session.opplan.status === 'aprobado' ? 'badge-ok' : 'badge-warn'}`}>{session.opplan.status}</span></span></div>
-            </>
-          ) : <span className="muted">Sin OPPLAN</span>}
+          <h3>Sesiones</h3>
+          <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--primary)' }}>{totalSessions}</div>
+          <span className="muted">objetivos escaneados</span>
         </div>
         <div className="card">
-          <h3>🗂️ Sesión</h3>
-          <div className="kv"><span className="k">Objetivo</span><span className="v">{session.target || '—'}</span></div>
-          <div className="kv"><span className="k">Hallazgos</span><span className="v">{findings.length}</span></div>
+          <h3>Hallazgos</h3>
+          <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--violet)' }}>{totalFindings}</div>
+          <span className="muted">vulnerabilidades detectadas</span>
+        </div>
+        <div className="card">
+          <h3>Reportes</h3>
+          <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--green)' }}>{totalReports}</div>
+          <span className="muted">informes generados</span>
+        </div>
+        <div className="card">
+          <h3>Uptime</h3>
+          <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--yellow)' }}>{formatUptime(uptimeSeconds)}</div>
+          <span className="muted">tiempo activo</span>
         </div>
       </div>
 
-      <h2>🚀 Pipeline</h2>
       <div className="card">
-        {pipelinePhases.map(p => (
-          <div className="pipeline-phase" key={p}>
-            <div className={`phase-num ${phases[p]?.done ? 'done' : 'pending'}`}>
-              {phases[p]?.done ? '✓' : pipelinePhases.indexOf(p) + 1}
+        <h3>Hallazgos por severidad</h3>
+        {Object.entries(findingsBySeverity).map(([sev, count]) => (
+          <div key={sev} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <span style={{ width: 60, fontSize: 10, color: SEVERITY_COLORS[sev], textAlign: 'right' }}>
+              {SEVERITY_LABELS[sev]}
+            </span>
+            <div style={{ flex: 1, height: 14, background: '#0a101d', borderRadius: 4, overflow: 'hidden', border: '1px solid #16314b' }}>
+              <div style={{
+                width: `${(count / maxSeverity) * 100}%`,
+                height: '100%',
+                background: SEVERITY_COLORS[sev],
+                borderRadius: 4,
+                boxShadow: `0 0 8px ${SEVERITY_COLORS[sev]}`,
+                transition: 'width 0.4s ease',
+                minWidth: count > 0 ? 4 : 0,
+              }} />
             </div>
-            <div style={{ flex: 1 }}>
-              <strong>{p.toUpperCase()}</strong>
-              {phases[p]?.done ? <span className="badge badge-ok" style={{ marginLeft: 8 }}>done</span> : <span className="muted" style={{ marginLeft: 8 }}>pendiente</span>}
-            </div>
+            <span style={{ width: 30, fontSize: 11, color: 'var(--text)', textAlign: 'right' }}>{count}</span>
+          </div>
+        ))}
+        {Object.values(findingsBySeverity).every(v => v === 0) && (
+          <span className="muted" style={{ fontSize: 11 }}>Sin hallazgos registrados</span>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Actividad reciente</h3>
+        {recentActivity.length === 0 && <span className="muted" style={{ fontSize: 11 }}>Sin actividad reciente</span>}
+        {recentActivity.map((a, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #16314b' }}>
+            <span className={`badge ${a.type === 'finding' ? 'badge-err' : a.type === 'report' ? 'badge-ok' : 'badge-warn'}`} style={{ minWidth: 54, textAlign: 'center' }}>
+              {a.type}
+            </span>
+            <span style={{ flex: 1, fontSize: 11, color: 'var(--text)' }}>{a.message}</span>
+            <span style={{ fontSize: 9, color: 'var(--muted)' }}>{a.timestamp ? new Date(a.timestamp).toLocaleDateString() : ''}</span>
           </div>
         ))}
       </div>
-
-      {findings.length > 0 && (
-        <>
-          <h2>🐞 Hallazgos</h2>
-          <div className="card">
-            {findings.map((f, i) => (
-              <div className="finding" key={i}>
-                <span className="f-type">[{f.type}]</span>
-                <span className="f-sum">{f.summary}</span>
-                <span className="f-sev"><span className={`badge ${f.severity === 'high' || f.severity === 'critical' ? 'badge-err' : f.severity === 'medium' ? 'badge-warn' : 'badge-ok'}`}>{f.severity}</span></span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 }

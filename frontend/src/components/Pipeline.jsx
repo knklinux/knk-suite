@@ -8,6 +8,10 @@ export default function Pipeline({ api }) {
   const [paused, setPaused] = useState(null);
   const [results, setResults] = useState(null);
   const [toast, setToast] = useState('');
+  const [localRunning, setLocalRunning] = useState(false);
+  const [localResult, setLocalResult] = useState(null);
+  const [surfaceRunning, setSurfaceRunning] = useState(false);
+  const [surfaceResult, setSurfaceResult] = useState(null);
 
   const phases = ['plan', 'recon', 'scan', 'fuzz', 'exploit', 'reporte', 'verificar'];
   const emoji = { plan: '📋', recon: '🔍', scan: '🛡️', fuzz: '🚀', exploit: '✅', reporte: '📝', verificar: '🔎' };
@@ -18,6 +22,35 @@ export default function Pipeline({ api }) {
     const r = await api('/pipeline/run', { method: 'POST', body: JSON.stringify({ phase: phaseId }) });
     setPhaseOutputs(prev => ({ ...prev, [phaseId]: r }));
     return r;
+  };
+
+  const runLocalPipeline = async () => {
+    setLocalRunning(true);
+    setLocalResult(null);
+    try {
+      const r = await api('/pipeline/local', { method: 'POST', body: JSON.stringify({ maxPaths: 15 }) });
+      setLocalResult(r);
+      setToast(r.ok ? '✅ QA local completado sin tráfico externo.' : (r.error || 'Falló el QA local.'));
+    } catch (e) {
+      setToast('❌ No se pudo ejecutar el QA local: ' + e.message);
+    } finally {
+      setLocalRunning(false);
+    }
+  };
+
+  const runSurfaceMap = async () => {
+    setSurfaceRunning(true);
+    setSurfaceResult(null);
+    try {
+      const r = await api('/surface/map', { method: 'POST', body: JSON.stringify({ maxBundles: 12 }) });
+      setSurfaceResult(r);
+      if (!r.ok && r.error) setToast('❌ ' + r.error);
+      else setToast('✅ Mapeo de superficie completado — ' + (r.endpoints?.length || 0) + ' endpoints.');
+    } catch (e) {
+      setToast('❌ No se pudo ejecutar el mapeo: ' + e.message);
+    } finally {
+      setSurfaceRunning(false);
+    }
   };
 
   const startPipeline = async () => {
@@ -55,13 +88,22 @@ export default function Pipeline({ api }) {
 
       <div className="card">
         <h3>▶ Pipeline automático + manual</h3>
-        <p className="muted">Auto: PLAN → RECON → SCAN | Manual: FUZZ → EXPLOIT | Auto: REPORTE → VERIFICAR</p>
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button className="btn" onClick={startPipeline} disabled={running}>
-            {running ? '⏳...' : paused ? '▶ Continuar' : '🚀 Ejecutar pipeline'}
+        <p className="muted">Auto: PLAN → RECON → SCAN | Manual confirmado: FUZZ → EXPLOIT | Auto: REPORTE → VERIFICAR</p>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <button className="btn" onClick={startPipeline} disabled={running || localRunning}>
+            {running ? '⏳...' : paused ? '▶ Continuar' : '🚀 Pipeline externo controlado'}
           </button>
           {paused && <button className="btn btn-green" onClick={() => continueAfter(paused)}>▶ Después de {paused}</button>}
+          <button className="btn btn-sm btn-outline" onClick={runLocalPipeline} disabled={running || localRunning}>
+            {localRunning ? '⏳ QA local...' : '🧪 Ejecutar pipeline local sintético'}
+          </button>
+          <button className="btn btn-sm" onClick={runSurfaceMap} disabled={running || surfaceRunning}>
+            {surfaceRunning ? '⏳ Descargando bundles...' : '🗺️ Mapear superficie (JS bundles)'}
+          </button>
         </div>
+        <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+          El pipeline local valida todas las fases con cuentas/recursos sintéticos y no necesita Docker, Burp ni OPPLAN externo.
+        </p>
         {status && <p style={{ marginTop: 8, fontSize: 12 }}>{status}</p>}
       </div>
 
@@ -76,7 +118,7 @@ export default function Pipeline({ api }) {
               <strong>{emoji[p]} {p.toUpperCase()}</strong>
               <span style={{ display: 'block', fontSize: 10, color: 'var(--muted)' }}>
                 {phaseOutputs[p]?.ok
-                  ? (p === 'recon' ? `${phaseOutputs[p].output?.totalSubs || 0} subdominios`
+                  ? (p === 'recon' ? `${phaseOutputs[p].output?.totalSubs || 0} subdominios · ${phaseOutputs[p].output?.totalCadenasCname || 0} cadenas CNAME`
                     : p === 'scan' ? `${phaseOutputs[p].output?.headersAusentes?.length || 0} headers ausentes`
                     : p === 'verificar' ? `${phaseOutputs[p].output?.verdict || ''} (${phaseOutputs[p].output?.score || 0}/100)`
                     : 'completado')
@@ -91,35 +133,62 @@ export default function Pipeline({ api }) {
 
       {paused === 'fuzz' && (
         <div className="card" style={{ borderColor: 'var(--yellow)' }}>
-          <h3 style={{ color: 'var(--yellow)' }}>🔍 Comandos de fuzzing — copia en Terminal Kali</h3>
-          {[
-            ['ffuf', `ffuf -u https://${tgt}/FUZZ -w /usr/share/wordlists/dirb/common.txt -mc 200,301,302,403 -t 1`],
-            ['nmap', `nmap -sV -p 80,443,8080 ${tgt}`],
-            ['nuclei', `nuclei -u https://${tgt} -t http/misconfiguration -silent -timeout 5`],
-            ['subfinder', `subfinder -d ${tgt} -silent`],
-            ['whatweb', `whatweb https://${tgt}`],
-          ].map(([name, cmd]) => (
-            <div key={name} style={{ fontSize: 11, marginBottom: 4 }}>
-              <strong>{name}:</strong> <code style={{ fontSize: 10 }}>{cmd}</code>
+          <h3 style={{ color: 'var(--yellow)' }}>🔍 Fuzzing manual controlado</h3>
+          <p style={{ fontSize: 11 }}>La suite limita a <strong>15 rutas, una petición cada vez</strong>, con el rate limit global de la sesión. No uses ffuf/nuclei ni comandos externos contra el objetivo desde esta pantalla.</p>
+          <p style={{ fontSize: 11 }}>Revisa el scope, la cuenta autorizada y el Brief; después ejecuta la fase con <code>manualConfirm:true</code>. Se detiene ante 429/430/509, 503, dos respuestas 403 consecutivas o fuera de scope.</p>
+          <div style={{ fontSize: 11 }}><strong>Objetivo:</strong> <code>{tgt}</code></div>
+        </div>
+      )}
+
+      {localResult?.ok && (
+        <div className="card" style={{ borderColor: 'var(--green)' }}>
+          <h3 style={{ color: 'var(--green)' }}>🧪 Resultado del QA local</h3>
+          <div className="kv"><span className="k">Veredicto</span><span className="v">{localResult.verdict}</span></div>
+          <div className="kv"><span className="k">Fases</span><span className="v">{localResult.completed}/{localResult.total}</span></div>
+          <div className="kv"><span className="k">Peticiones externas</span><span className="v">{localResult.externalRequests}</span></div>
+          <div className="kv"><span className="k">Docker/Burp</span><span className="v">No utilizados</span></div>
+          {localResult.phases?.map((p) => (
+            <div className="finding" key={p.phase}>
+              <span className="f-type">[{p.phase.toUpperCase()}]</span>
+              <span className="f-sum">{p.ok ? 'OK' : 'FALLÓ'} {p.output?.reason || p.findings?.[0]?.summary || ''}</span>
+              <span className={`badge ${p.ok ? 'badge-ok' : 'badge-err'}`}>{p.ok ? 'OK' : 'ERROR'}</span>
             </div>
           ))}
+          <p className="muted" style={{ fontSize: 11 }}>
+            Este resultado sirve para probar KNK Suite; no es un hallazgo contra OpenAI ni se puede enviar a Bugcrowd.
+          </p>
+        </div>
+      )}
+
+      {surfaceResult?.ok && (
+        <div className="card" style={{ borderColor: 'var(--green)' }}>
+          <h3 style={{ color: 'var(--green)' }}>🗺️ Superficie mapeada</h3>
+          <div className="kv"><span className="k">Bundles</span><span className="v">{surfaceResult.totalBundles} · {surfaceResult.indexBytes} bytes index</span></div>
+          <div className="kv"><span className="k">Endpoints únicos</span><span className="v">{surfaceResult.endpoints?.length || 0}</span></div>
+          <div className="kv"><span className="k">Identificadores</span><span className="v">{(surfaceResult.identifiers && Object.keys(surfaceResult.identifiers).length) || 0}</span></div>
+          <div className="kv"><span className="k">Evidencia</span><span className="v">{(surfaceResult.savedEvidence || []).length} archivos</span></div>
+          {surfaceResult.skippedOutOfScope?.length > 0 && <p className="muted" style={{ fontSize: 11 }}>⛔ {surfaceResult.skippedOutOfScope.length} recursos fuera de scope ignorados.</p>}
+          {surfaceResult.endpoints?.length > 0 && (
+            <details>
+              <summary style={{ fontSize: 12 }}>Ver endpoints ({surfaceResult.endpoints.length})</summary>
+              <pre style={{ maxHeight: 260, overflow: 'auto', fontSize: 11 }}>{surfaceResult.endpoints.join('\n')}</pre>
+            </details>
+          )}
+          {surfaceResult.identifiers && Object.keys(surfaceResult.identifiers).length > 0 && (
+            <details>
+              <summary style={{ fontSize: 12 }}>Ver identificadores</summary>
+              <pre style={{ maxHeight: 200, overflow: 'auto', fontSize: 11 }}>{Object.entries(surfaceResult.identifiers).map(([k, v]) => `${k}: ${v}`).join('\n')}</pre>
+            </details>
+          )}
         </div>
       )}
 
       {paused === 'exploit' && (
         <div className="card" style={{ borderColor: 'var(--yellow)' }}>
-          <h3 style={{ color: 'var(--yellow)' }}>🔓 Comandos de explotación — copia en Terminal Kali</h3>
-          {[
-            ['CORS', `curl -sI -H "Origin: https://evil.example" https://${tgt}`],
-            ['IDOR', `curl -s https://${tgt}/api/users/OTHER_ID`],
-            ['XSS', `curl -s "https://${tgt}/search?q=<script>alert(1)</script>"`],
-            ['SSRF', `curl -s "https://${tgt}/fetch?url=http://127.0.0.1"`],
-            ['SQLi', `sqlmap -u "https://${tgt}/page?id=1" --batch --level=1`],
-          ].map(([name, cmd]) => (
-            <div key={name} style={{ fontSize: 11, marginBottom: 4 }}>
-              <strong>{name}:</strong> <code style={{ fontSize: 10 }}>{cmd}</code>
-            </div>
-          ))}
+          <h3 style={{ color: 'var(--yellow)' }}>🔓 Validación manual con compuertas</h3>
+          <p style={{ fontSize: 11 }}>No se muestran comandos genéricos de explotación. Selecciona una hipótesis concreta, usa tráfico propio y valida el impacto con la compuerta correspondiente.</p>
+          <p style={{ fontSize: 11 }}>Todas las peticiones de la suite pasan por el limiter global y respetan scope. La ronda de race exige <code>manualConfirm:true</code>, máximo 3 peticiones y no completa transacciones.</p>
+          <div style={{ fontSize: 11 }}><strong>Objetivo:</strong> <code>{tgt}</code></div>
         </div>
       )}
 
@@ -128,12 +197,29 @@ export default function Pipeline({ api }) {
           <h3>📊 Resumen</h3>
           <div className="kv"><span className="k">Hallazgos</span><span className="v">{(results.findings || []).length}</span></div>
           {(results.findings || []).map((f, i) => (
-            <div className="finding" key={i}>
+            <div className="finding" key={i} style={{ cursor: 'pointer' }} onClick={() => {
+              const detail = JSON.stringify(f, null, 2);
+              if (navigator.clipboard) {
+                navigator.clipboard.writeText(detail);
+                setToast('📋 Hallazgo copiado al portapapeles');
+              }
+            }}>
               <span className="f-type">[{f.type}]</span>
               <span className="f-sum">{f.summary}</span>
               <span className="f-sev"><span className={`badge badge-ok`}>{f.severity}</span></span>
             </div>
           ))}
+          {results.findings?.length > 0 && (
+            <button className="btn btn-sm btn-outline" style={{ marginTop: 8 }} onClick={() => {
+              if (confirm('¿Borrar todos los hallazgos de esta sesión?')) {
+                api('/session', { method: 'DELETE' }).then(() => {
+                  setResults(null);
+                  setToast('✅ Hallazgos borrados');
+                  api('/session').then(setSession);
+                });
+              }
+            }}>🗑️ Borrar hallazgos</button>
+          )}
         </div>
       )}
     </div>
