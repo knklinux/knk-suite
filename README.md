@@ -16,6 +16,32 @@ tráfico que tú autorizas.
 
 ---
 
+## 🖼️ El workbench en imágenes
+
+Capturas reales de la app (resolución nativa 1440×900, tomadas sobre la build actual):
+
+### Panel principal
+
+![Dashboard](docs/img/dashboard.png)
+
+_Métricas del workbench, sesiones, hallazgos por severidad y actividad reciente._
+
+### Centro de cámaras públicas
+
+![Cámaras públicas](docs/img/cameras-map.png)
+
+_8 fuentes keyless (DGT, Madrid, TfL, Caltrans, 511NY, Digitraffic, Vegagerðin, Windy),
+mapa mundial con 48 cámaras en pantalla y filtros por país/categoría/distancia._
+
+### Auditoría de proxies HLS
+
+![Auditoría HLS](docs/img/hls-audit.png)
+
+_Botón 🛡 en cada tarjeta con chip HLS: análisis del manifiesto que detecta reescritura
+de hosts ajenos (proxy abierto → SSRF), con sonda activa opt-in y conversión a hallazgo._
+
+---
+
 ## ✨ Qué incluye
 
 ### Pipeline ofensivo (con autorización)
