@@ -1,0 +1,115 @@
+{
+  "_nota": "Scopes y payouts cambian constantemente. VERIFICA cada programa en su página antes de configurarlo. Ningún dato de scope aquí es garantía actual.",
+  "criterios": [
+    "Scope: número de assets, wildcards o hostnames, API/mobile incluidos",
+    "Payout: rango por severidad MEDIA (los criticals son raros)",
+    "Triage: response efficiency y tiempo medio en las stats del programa",
+    "Competencia: hacktividad reciente y cantidad de hackers activos",
+    "Disqualifiers: automatización, DoS, self-XSS, cuentas de prueba",
+    "Bounty vs VDP: que pague, no solo disclosure"
+  ],
+  "candidatos": [
+    {
+      "id": "cloudflare",
+      "plataforma": "hackerone",
+      "url": "https://hackerone.com/cloudflare",
+      "nombre": "Cloudflare",
+      "alineacion": ["web", "api", "infra"],
+      "por_que": "Programa público confirmado, triage activo y bien valorado, scope amplio (edge, API, dashboard). Encaja con recon + API + lógica de negocio.",
+      "nivel": "intermedio",
+      "competencia": "alta",
+      "nota": "Competido, pero los bugs de API/lógica pagan bien. Verificar scope actual en la pestaña Scope."
+    },
+    {
+      "id": "ubiquiti",
+      "plataforma": "hackerone",
+      "url": "https://hackerone.com/ubiquiti",
+      "nombre": "Ubiquiti",
+      "alineacion": ["web", "api", "iot", "cameras"],
+      "por_que": "Hardware de red + cámaras UniFi: alineado con el módulo de cámaras (RTSP/ONVIF en scope si el programa lo permite). Históricamente scope amplio.",
+      "nivel": "intermedio",
+      "competencia": "alta",
+      "nota": "La parte de cámaras requiere que el programa la incluya explícitamente. Verificar política antes de tocar ningún dispositivo."
+    },
+    {
+      "id": "sky",
+      "plataforma": "bugcrowd",
+      "url": "https://bugcrowd.com/engagements/sky-plc-mbb-og",
+      "nombre": "Sky UK/ROI (VDP)",
+      "alineacion": ["web", "api", "mobile"],
+      "por_que": "Programa visible en Bugcrowd con superficie amplia (telecom/media). Bueno para practicar metodología y sumar reputación.",
+      "nivel": "principiante",
+      "competencia": "media",
+      "nota": "Confirmar si es bounty o VDP sin premio en la página del programa."
+    },
+    {
+      "id": "bugcrowd-iot",
+      "plataforma": "bugcrowd",
+      "url": "https://bugcrowd.com/engagements?category=bug_bounty&target_categories=iot",
+      "nombre": "Filtro IoT en Bugcrowd",
+      "alineacion": ["iot", "cameras"],
+      "por_que": "Categoría real de Bugcrowd con programas de hardware/IoT (cámaras incluidas). Es el lugar para encontrar programas de cámaras en scope.",
+      "nivel": "variable",
+      "competencia": "variable",
+      "nota": "Muchos programas IoT son privados/invitación: la reputación previa abre puertas. Revisar uno por uno."
+    },
+    {
+      "id": "h1-directorio",
+      "plataforma": "hackerone",
+      "url": "https://hackerone.com/bug-bounty-programs",
+      "nombre": "Directorio HackerOne (filtros)",
+      "alineacion": ["web", "api", "mobile", "iot"],
+      "por_que": "Filtra por bounty activo + categoría + payout. Busca programas medianos con scope de 1-3 assets y poca hacktividad: menos duplicados.",
+      "nivel": "principiante",
+      "competencia": "baja",
+      "nota": "La mejor fuente para encontrar tu nicho: empresas B2B/fintech regionales con pocos investigadores."
+    },
+    {
+    "id": "banco-plata",
+    "plataforma": "hackerone",
+    "url": "https://hackerone.com/banco_plata",
+    "nombre": "Banco Plata (bancoplata.mx)",
+    "alineacion": ["web", "api", "mobile"],
+    "por_que": "Banca digital mexicana: wildcards *.platacard.mx y *.bancoplata.mx + apps iOS/Android. Bounty lanzado ene 2026, response efficiency 99%, payout $100-$5000. Encaja con recon + API + lógica de negocio + mobile.",
+    "nivel": "principiante-intermedio",
+    "competencia": "alta (flood de reports)",
+    "scope_real": {
+      "in": ["*.platacard.mx", "*.bancoplata.mx", "platacard.mx", "bancoplata.mx"],
+      "mobile": [{"platform": "ios", "id": "id6443932656", "name": "App Store"}, {"platform": "android", "bundle": "dif.tech.plata", "name": "Play Store"}],
+      "excluidos_por_path": ["https://platacard.mx/*/whistleblowing", "https://bancoplata.mx/*/whistleblowing"]
+    },
+    "stats": {
+      "total_bounties_pagados": "$5,978",
+      "avg_bounty": "$250-$350",
+      "reports_90d": 1313,
+      "bounties_90d": "$1,350",
+      "reports_resueltos": 1,
+      "hackers_agradecidos": 16
+    },
+    "nota": "⚠️ Señal de alerta: 1313 reports en 90 días con SOLO 1 resuelto y último pago hace ~5 meses. Programa inundado de duplicados/baja calidad: probablemente el peor ratio esfuerzo/pago de los candidatos. Útil para practicar metodología; NO lo elijas si tu objetivo inmediato es cobrar."
+  },
+  {
+    "id": "simplisafe",
+    "plataforma": "bugcrowd",
+    "url": "https://bugcrowd.com/engagements/simplisafe",
+    "nombre": "SimpliSafe (Managed Bug Bounty)",
+    "alineacion": ["web", "api", "mobile", "iot", "cameras"],
+    "por_que": "Seguridad del hogar con cámaras: scope incluye API (api.simplisafe.com), MFA (mfa.simplisafe.com), nube de cámaras (*.prd.cam.simplisafe.com), plataforma y webapp. Encaja perfecto con los módulos de cámaras (RTSP/ONVIF), lógica de negocio (auth/MFA) y playbook.",
+    "nivel": "principiante-intermedio",
+    "competencia": "media",
+    "payout": "Hasta $6,000 (abierto al público)",
+    "scope_real": {
+      "in": [
+        "simplisafe.com", "simplisafe.co.uk", "webapp.simplisafe.com", "webapp.simplisafe.co.uk",
+        "api.simplisafe.com", "api.services.simplisafe.com", "api.prd.commerce.simplisafe.com",
+        "mfa.simplisafe.com", "media.simplisafe.com", "bb1.simplisafe.com", "bb2.simplisafe.com", "cb.simplisafe.com",
+        "*.prd.cam.simplisafe.com", "*.prd.platform.simplisafe.com", "*.prd.services.simplisafe.com",
+        "*.prd.aser.simplisafe.com", "*.prd.webapps.simplisafe.com"
+      ],
+      "out_of_scope_verificar": "Bugcrowd es SPA: verifica en la página del programa los excluidos (terceros, apps móviles y paths fuera de scope) antes de autorizar."
+    },
+    "nota": "Programa público activo (gestionado por Bugcrowd). Payouts hasta $6,000. Verificar el scope actual y los excluidos en bugcrowd.com/engagements/simplisafe antes de tocar nada."
+  }
+  ],
+  "recomendacion": "Empieza por el directorio H1 con filtros (bounty + categoría API) para encontrar programas medianos con poca competencia. Cloudflare como objetivo aspiracional cuando domines API/logica. La parte de cámaras, via Bugcrowd IoT, tras construir reputación. Banco Plata: añadido a petición del usuario, con la advertencia de sus stats (flood de reports, 1 resuelto)."
+}

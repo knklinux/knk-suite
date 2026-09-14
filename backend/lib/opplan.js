@@ -4,6 +4,11 @@
 // KNK SUITE v2 — OPPLAN (Operation Plan)
 // ============================================================================
 
+// La semántica de scope DEBE ser idéntica a net.js (única fuente de verdad):
+// exacto = solo ese host; wildcard (*.) = subdominios, NUNCA el apex; sin
+// strip de www. Si divergen, el pipeline bloquea (fail-closed) o autoriza mal.
+const netMod = require('./net');
+
 function blank() {
   return {
     nombre: '',

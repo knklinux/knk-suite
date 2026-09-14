@@ -86,6 +86,14 @@ export default function Pipeline({ api }) {
       <h2>🚀 Pipeline</h2>
       {toast && <div className="toast">{toast}</div>}
 
+      {phaseOutputs.plan && !phaseOutputs.plan.ok && (
+        <div className="card" style={{ borderColor: 'var(--red)' }}>
+          <h3 style={{ color: 'var(--red)' }}>⛔ PLAN bloqueado</h3>
+          <p style={{ fontSize: 12 }}>{phaseOutputs.plan.error || 'Falta el OPPLAN'}</p>
+          <p style={{ fontSize: 12 }}>Ve a la pestaña <strong>📋 OPPLAN</strong>, crea el plan, marca la autorización escrita y pulsa <strong>Aprobar</strong>.</p>
+        </div>
+      )}
+
       <div className="card">
         <h3>▶ Pipeline automático + manual</h3>
         <p className="muted">Auto: PLAN → RECON → SCAN | Manual confirmado: FUZZ → EXPLOIT | Auto: REPORTE → VERIFICAR</p>

@@ -66,4 +66,4 @@
 - [ ] Modo headless para CI/CD
 - [ ] Notificaciones desktop en hallazgos críticos
 - [ ] Múltiples sesiones simultáneas
-- [ ] Historial de reportes con diff
+- [ ] Dashboards de métricas de caza (tiempo por hallazgo, tasa de duplicados)

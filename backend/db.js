@@ -185,19 +185,27 @@ function getOrCreateSession(id) {
   return s;
 }
 
+// Normaliza un campo JSON de sesión: acepta objeto O string JSON (evita
+// doble-encodificado en round-trips getOrCreateSession → saveSession).
+function toObj(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
 function saveSession(id, data) {
   stmts.updateSession.run(
     data.target || null,
-    JSON.stringify(data.scope || []),
+    JSON.stringify(toObj(data.scope) || []),
     data.user_agent || null,
     data.rate_limit_ms || 2000,
     data.program_url || null,
     data.program_name || null,
     data.program_policy || null,
-    JSON.stringify(data.out_of_scope || []),
-    JSON.stringify(data.opplan || {}),
-    JSON.stringify(data.phases || {}),
-    JSON.stringify(data.artifacts || {}),
+    JSON.stringify(toObj(data.out_of_scope) || []),
+    JSON.stringify(toObj(data.opplan) || {}),
+    JSON.stringify(toObj(data.phases) || {}),
+    JSON.stringify(toObj(data.artifacts) || {}),
     id
   );
 }

@@ -11,6 +11,7 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const { router } = require('./routes');
 const { publicCamerasRouter } = require('./lib/public-webcams-router');

@@ -1,9 +1,5 @@
 'use strict';
 
-// ============================================================================
-// KNK SUITE v2 — HTTP helpers (custom UA, rate limit, scope awareness)
-// ============================================================================
-
 const http = require('http');
 const https = require('https');
 const tls = require('tls');
@@ -16,9 +12,12 @@ try { _v13Escanear = require("./v13-detector").escanear; } catch {}
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const dns = require('dns').promises;
+const net = require('net');
 
 const DEFAULT_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36';
-const UA_SUFFIX = 'knk-suite/2.0 (bug bounty research; see OPPLAN for scope/authorization)';
+const UA_SUFFIX = 'knk-suite/2.0 (authorized security research)';
+const MAX_EVIDENCE_BYTES = 10 * 1024 * 1024;
 
 // ── Proxy opcional (p. ej. Burp Suite en 127.0.0.1:8080) ──────────────────
 // KNK_PROXY=http://127.0.0.1:8080 node ... → todo el tráfico pasa por Burp.
@@ -223,18 +222,52 @@ function inScope(host) {
   }
   return false;
 }
-
-// ── Evidence directory ──────────────────────────────
-let _evidenciaDir = path.join(os.homedir(), '.knk-suite', 'evidencia');
-function setEvidenciaDir(dir) { _evidenciaDir = dir; fs.mkdirSync(dir, { recursive: true }); }
+function isTrustedService(host) {
+  return TRUSTED_SERVICES.has(normalizeHost(host));
+}
+function isPrivateHost(input) {
+  const host = normalizeHost(input);
+  if (!host) return true;
+  if (net.isIP(host) === 4) {
+    const p = host.split('.').map(Number);
+    return p[0] === 0 || p[0] === 10 || p[0] === 127 || (p[0] === 169 && p[1] === 254) ||
+      (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168);
+  }
+  if (net.isIP(host) === 6) return host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:');
+  return /^(localhost|localhost\.local|ip6-localhost|metadata\.google\.internal)$/i.test(host);
+}
+function setScope(scope) { _scope = Array.isArray(scope) ? scope.filter(Boolean) : []; }
+function setOutOfScope(scope) { _outOfScope = Array.isArray(scope) ? scope.filter(Boolean) : []; }
+function matchesRule(host, rule) {
+  const raw = String(rule || '').trim().toLowerCase();
+  const wildcard = raw.startsWith('*.');
+  const base = normalizeHost(wildcard ? raw.slice(2) : raw);
+  return !!base && (wildcard ? host.endsWith(`.${base}`) && host !== base : host === base);
+}
+function inScope(host) {
+  const normalized = normalizeHost(host);
+  if (!normalized || isPrivateHost(normalized) || !_scope.length) return false;
+  if (_outOfScope.some(rule => matchesRule(normalized, rule))) return false;
+  return _scope.some(rule => matchesRule(normalized, rule));
+}
+async function isSafePublicHost(host) {
+  const normalized = normalizeHost(host);
+  if (!normalized || isPrivateHost(normalized)) return false;
+  if (net.isIP(normalized)) return true;
+  try {
+    const addresses = await dns.lookup(normalized, { all: true, verbatim: true });
+    return addresses.length > 0 && addresses.every(record => !isPrivateHost(record.address));
+  } catch { return false; }
+}
+function setEvidenciaDir(dir) { _evidenciaDir = path.resolve(String(dir)); fs.mkdirSync(_evidenciaDir, { recursive: true }); }
 function getEvidenciaDir() { return _evidenciaDir; }
 function saveEvidence(name, data) {
-  const dir = getEvidenciaDir();
-  fs.mkdirSync(dir, { recursive: true });
-  const ts = Date.now();
-  const safe = String(name).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60);
-  const file = path.join(dir, `${ts}_${safe}`);
-  fs.writeFileSync(file, data, data instanceof Buffer ? null : 'utf8');
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
+  if (buffer.length > MAX_EVIDENCE_BYTES) throw new Error('evidence_too_large');
+  fs.mkdirSync(_evidenciaDir, { recursive: true });
+  const safe = String(name || 'evidence').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) || 'evidence';
+  const file = path.join(_evidenciaDir, `${Date.now()}_${safe}`);
+  fs.writeFileSync(file, buffer);
   return file;
 }
 
@@ -364,6 +397,9 @@ function fetch(url, opts = {}) {
     });
   });
 }
+async function getJson(url, opts = {}) { return (await fetch(url, opts)).json(); }
+async function getText(url, opts = {}) { const result = await fetch(url, opts); return result.ok ? result.text : ''; }
+function qs(value) { return encodeURIComponent(value); }
 
 async function getJson(url, opts = {}) { const r = await fetch(url, opts); return r.json(); }
 async function getText(url, opts = {}) { const r = await fetch(url, opts); return r.ok ? r.text : ''; }

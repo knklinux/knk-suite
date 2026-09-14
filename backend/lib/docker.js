@@ -1,13 +1,6 @@
 'use strict';
 
-// ============================================================================
-// KNK SUITE v2 — Integración Docker Kali
-// Usa sg docker porque el usuario no está en el grupo docker
-// spawnSync con timeout hard para evitar bloqueos
-// ============================================================================
-
 const { spawnSync } = require('child_process');
-
 const CONTAINER = process.env.KNK_KALI_CONTAINER || 'knk-kali';
 const VALID_CONTAINER = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 
@@ -61,7 +54,6 @@ function isRunning() {
     return !r.error && r.status === 0 && String(r.stdout || '').trim() === 'true';
   } catch { return false; }
 }
-
 function exec(tool, args, opts = {}) {
   const timeout = Math.min(opts.timeoutMs || 10000, 10000); // hard cap 10s
   const toolMap = { httpx: 'httpx-toolkit' };
@@ -112,7 +104,6 @@ function exec(tool, args, opts = {}) {
     return { ok: false, output: String(e.message || '').slice(0, 200), missing: false };
   }
 }
-
 function ensureRunning() {
   if (isRunning()) return true;
   const container = safeContainer();

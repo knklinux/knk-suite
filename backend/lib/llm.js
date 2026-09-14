@@ -12,6 +12,7 @@
 // ============================================================================
 
 const http = require('http');
+const https = require('https');
 
 const OLLAMA = process.env.KNK_OLLAMA_BASE || 'http://127.0.0.1:11434';
 
