@@ -1,7 +1,28 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
-use std::{env, fs, net::TcpStream, os::windows::process::CommandExt, path::{Path, PathBuf}, process::{Child, Command, Stdio}, sync::{Arc, Mutex}, thread, time::Duration};
+use std::{env, fs, net::TcpStream, path::{Path, PathBuf}, process::{Child, Command, Stdio}, sync::{Arc, Mutex}, thread, time::Duration};
+
+/// Oculta la ventana de consola del backend en Windows (no-op en otros SO).
+/// Firma (&mut self) -> &mut Self para encajar en la cadena del builder
+/// de std::process::Command (stdout/stderr devuelven &mut Command).
+trait HideWindow {
+    fn hide_window(&mut self) -> &mut Self;
+}
+
+#[cfg(windows)]
+impl HideWindow for Command {
+    fn hide_window(&mut self) -> &mut Self {
+        use std::os::windows::process::CommandExt;
+        self.creation_flags(CREATE_NO_WINDOW);
+        self
+    }
+}
+
+#[cfg(not(windows))]
+impl HideWindow for Command {
+    fn hide_window(&mut self) -> &mut Self { self }
+}
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const HOST: &str = "127.0.0.1";
@@ -278,9 +299,19 @@ fn spawn_backend_process(app: &AppHandle) -> Result<Child, String> {
     let exe = node_executable();
     let entry_s = entry.to_string_lossy().to_string();
     let log_path = root.join("backend.log");
-    let log_file = std::fs::File::create(&log_path)
-        .and_then(|f| f.try_clone())
-        .unwrap_or_else(|_| std::fs::File::open("nul").unwrap());
+    // Si no se puede crear backend.log: silencio vía Stdio::null(), que
+    // funciona igual en Windows, Linux y macOS. Antes se usaba el
+    // dispositivo "nul" (inexistente fuera de Windows) con unwrap().
+    let log_file = std::fs::File::create(&log_path).and_then(|f| f.try_clone());
+    let make_log_stdio = |log: &Result<std::fs::File, std::io::Error>| -> Stdio {
+        match log {
+            Ok(f) => match f.try_clone() {
+                Ok(clone) => Stdio::from(clone),
+                Err(_) => Stdio::null(),
+            },
+            Err(_) => Stdio::null(),
+        }
+    };
 
     Command::new(&exe)
         .arg(&entry_s)
@@ -290,18 +321,21 @@ fn spawn_backend_process(app: &AppHandle) -> Result<Child, String> {
         .env("NODE_PATH", node_modules_path)
         .env("KNK_BACKEND_ROOT", root.join("backend"))
         .stdin(Stdio::null())
-        .stdout(Stdio::from(log_file.try_clone().unwrap_or_else(|_| std::fs::File::open("nul").unwrap())))
-        .stderr(Stdio::from(log_file))
-        .creation_flags(CREATE_NO_WINDOW)
+        .stdout(make_log_stdio(&log_file))
+        .stderr(make_log_stdio(&log_file))
+        .hide_window()
         .spawn()
         .map_err(|error| format!("No se pudo arrancar Node/backend: {error}"))
         .and_then(|mut child| {
             // Watchdog: asigna el node a un Job Object "asilo". Si el exe
             // muere de cualquier manera, el kernel mata el árbol completo.
+            #[cfg(windows)]
             let raw = {
                 use std::os::windows::io::AsRawHandle;
                 child.as_raw_handle() as isize
             };
+            #[cfg(not(windows))]
+            let raw: isize = 0;
             match process_watchdog::bind_backend_child(raw) {
                 Ok(job) => {
                     if let Ok(mut h) = JOB_HANDLE.lock() { *h = Some(job); }
