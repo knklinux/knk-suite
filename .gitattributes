@@ -1,0 +1,9 @@
+# .gitattributes — normalización de finales de línea
+# El CI checkouta en LF; con autocrlf=true en Windows, un CRLF rompería
+# scripts de shell en hooks (sh muere con CRLF) y alteraría hashes.
+* text=auto
+*.sh text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.py text eol=lf
+.githooks/* text eol=lf

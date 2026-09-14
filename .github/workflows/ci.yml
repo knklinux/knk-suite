@@ -32,3 +32,7 @@ jobs:
         run: npm run build
       - name: Server smoke test
         run: npm run smoke
+      # Backstop de secretos: el hook de pre-commit es local; esto cubre
+      # pushes hechos desde clones sin `npm install` (sin hooksPath).
+      - name: Secret scan (tree)
+        run: node ci/secret-check.mjs --all
