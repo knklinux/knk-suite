@@ -36,6 +36,7 @@ const { auditLocalCameraNetwork } = require('./lib/camera-audit');
 const cameraIndex = require('./lib/camera-index');
 const vmLabs = require('./lib/vm-labs');
 const dashboard = require('./lib/dashboard');
+const repeater = require('./lib/repeater');
 
 const router = express.Router();
 
@@ -457,6 +458,32 @@ function findingRow(f) {
     details,
   };
 }
+
+// ── Repeater (cliente HTTP manual estilo Burp) ──────────────────────────────
+// Envío manual de una petición cruda: scope obligatorio, limiter global
+// (>=800 ms entre peticiones, lo aplica net.fetch), maxRedirects=0 por
+// defecto para inspeccionar redirecciones en crudo.
+router.post('/repeater/send', async (req, res) => {
+  try {
+    const { raw, maxRedirects } = req.body || {};
+    if (typeof raw !== "string" || !raw.trim()) return res.status(400).json({ ok: false, error: "raw requerido" });
+    const s = getSession();
+    const r = await repeater.sendRaw(s, raw, { maxRedirects });
+    if (!r.ok) return res.status(400).json(r);
+    res.json({ ok: true, send: r.send });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Convertir un envío del Repeater en hallazgo de la misión
+router.post('/repeater/finding', (req, res) => {
+  try {
+    const { send, note } = req.body || {};
+    if (!send || !send.url || !send.method) return res.status(400).json({ ok: false, error: "send requerido" });
+    const s = getSession();
+    const f = repeater.toFinding(s.id, send, note);
+    res.json({ ok: true, finding: f });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
 router.post('/findings', (req, res) => {
   const { type, summary, severity, details } = req.body || {};

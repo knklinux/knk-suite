@@ -6,6 +6,7 @@ import KaliTerminal from './components/KaliTerminal';
 import Jobs from './components/Jobs';
 import CheatSheet from './components/CheatSheet';
 import Gates from './components/Gates';
+import Repeater from './components/Repeater';
 import Reportes from './components/Reportes';
 import Compliance from './components/Compliance';
 import Assistant from './components/Assistant';
@@ -101,6 +102,7 @@ export default function App() {
     terminal: <KaliTerminal api={api} inject={sendToTerminal} />,
     cheatsheet: <CheatSheet onSendToTerminal={(cmd) => send({ cmd })} onGoToTerminal={() => go('terminal')} />,
     gates: <Gates api={api} />,
+    repeater: <Repeater api={api} />,
     reportes: <Reportes api={api} />,
     compliance: <Compliance api={api} />,
     assistant: <Assistant api={api} />,
@@ -128,7 +130,7 @@ export default function App() {
 
   const icons = {
     dashboard: '📊', targets: '🎯', opplan: '📋', pipeline: '🚀', jobs: '⚙️',
-    terminal: '🖥️', cheatsheet: '📖', gates: '✅', reportes: '📝', compliance: '📜',
+    terminal: '🖥️', cheatsheet: '📖', gates: '✅', reportes: '📝', compliance: '📜', repeater: '🔁',
     assistant: '🤖', chat: '💬', vault: '📚', revocation: '🔁', osint: '🌐', cameras: '🎥',
     liligo: '⚡', labs: '🧪',
     tools: '🔧', 'report-export': '📄', nuclei: '🛡️', clipboard: '📋', alerts: '🔔',
@@ -136,7 +138,7 @@ export default function App() {
   };
   const labels = {
     dashboard: 'Panel', targets: 'Targets', opplan: 'OPPLAN', pipeline: 'Pipeline', jobs: 'Trabajos',
-    terminal: 'Terminal Kali', cheatsheet: 'Guía manual', gates: 'Compuertas', reportes: 'Reportes',
+    terminal: 'Terminal Kali', cheatsheet: 'Guía manual', gates: 'Compuertas', reportes: 'Reportes', repeater: 'Repeater',
     compliance: 'Cumplimiento', assistant: 'KNK Assistant', chat: 'Chat unificado', vault: 'Bóveda',
     revocation: 'Revocación A/B', osint: 'OSINT Hub', cameras: 'Cámaras Públicas', liligo: 'LILIGO ESP32', labs: 'Laboratorios VM',
     tools: 'Instalar Tools', 'report-export': 'Exportar Reportes', nuclei: 'Nuclei Scanner',
