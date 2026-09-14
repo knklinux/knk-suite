@@ -1,0 +1,12 @@
+# V10 — sondeos read-only (superficie plugin/gizmo install) — 2026-09-06T16:49:48.082Z
+# sesión A completa (cookies+Bearer) · 0 escrituras · sin /conversation
+[1] GET /backend-api/plugins/{plugin_id}/install → 405 | {"detail":"Method Not Allowed"}
+[2] GET /backend-api/gizmos/discovery?query=&limit=3 → 200 | {"cuts":[],"workspace_filtered":false,"locale":"global"}
+[3] GET /backend-api/user_gizmos?limit=3 → 404 | {"detail":"Not Found"}
+[4] GET /backend-api/aip/p?limit=3 → 404 | {"detail":"Not Found"}
+[5] GET /backend-api/plugins/config → 404 | {"detail":"Not Found"}
+[6] GET /backend-api/plugin_service/health → 404 | {"detail":"Not Found"}
+
+# fase 2 (POST sintético + control anónimo) — 2026-09-06T16:50:12.544Z
+[1] POST /plugins/SYNTHETIC-PLUGIN-001/install → 404 | {"detail":"Plugin not found"}
+[2] GET /gizmos/discovery (anónimo) → 401 | {"detail":{"message":"Unauthorized - Access token is missing"}}

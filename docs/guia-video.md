@@ -17,7 +17,7 @@
 4. Mostrar el dashboard limpio
 
 ### Qué decir:
-> "Esta es KnkSuite v2, una suite de bug bounty que ejecuta un pipeline completo de 7 fases en un solo puerto. Vamos a configurar un target real."
+> "Esta es KnkSuite v2, una suite de bug bounty con pipeline de 7 fases y controles visibles. Vamos a configurar un target autorizado."
 
 ---
 
@@ -92,7 +92,7 @@
 ### Qué mostrar durante la ejecución:
 - RECON: "421 subdominios, 50 URLs, tech: Apache, React"
 - SCAN: "6 headers ausentes, CORS: ok"
-- FUZZ: "stealth (15 paths, 2-4s delay)"
+- FUZZ: "manual-paced (15 rutas, limitador global, parada ante rate-limit)"
 - REPORTE: "borrador generado"
 - VERIFICAR: "REVISAR (65/100)"
 

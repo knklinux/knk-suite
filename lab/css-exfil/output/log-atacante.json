@@ -1,0 +1,218 @@
+[
+  {
+    "t": 1788705445974,
+    "path": "/collect",
+    "query": "?round=0&char=S&target=S",
+    "params": {
+      "round": "0",
+      "char": "S",
+      "target": "S"
+    }
+  },
+  {
+    "t": 1788705446926,
+    "path": "/collect",
+    "query": "?round=1&char=3&target=S3",
+    "params": {
+      "round": "1",
+      "char": "3",
+      "target": "S3"
+    }
+  },
+  {
+    "t": 1788705447863,
+    "path": "/collect",
+    "query": "?round=2&char=c&target=S3c",
+    "params": {
+      "round": "2",
+      "char": "c",
+      "target": "S3c"
+    }
+  },
+  {
+    "t": 1788705448790,
+    "path": "/collect",
+    "query": "?round=3&char=R&target=S3cR",
+    "params": {
+      "round": "3",
+      "char": "R",
+      "target": "S3cR"
+    }
+  },
+  {
+    "t": 1788705449722,
+    "path": "/collect",
+    "query": "?round=4&char=e&target=S3cRe",
+    "params": {
+      "round": "4",
+      "char": "e",
+      "target": "S3cRe"
+    }
+  },
+  {
+    "t": 1788705450659,
+    "path": "/collect",
+    "query": "?round=5&char=t&target=S3cRet",
+    "params": {
+      "round": "5",
+      "char": "t",
+      "target": "S3cRet"
+    }
+  },
+  {
+    "t": 1788705451587,
+    "path": "/collect",
+    "query": "?round=6&char=-&target=S3cRet-",
+    "params": {
+      "round": "6",
+      "char": "-",
+      "target": "S3cRet-"
+    }
+  },
+  {
+    "t": 1788705452515,
+    "path": "/collect",
+    "query": "?round=7&char=X&target=S3cRet-X",
+    "params": {
+      "round": "7",
+      "char": "X",
+      "target": "S3cRet-X"
+    }
+  },
+  {
+    "t": 1788705453447,
+    "path": "/collect",
+    "query": "?round=8&char=y&target=S3cRet-Xy",
+    "params": {
+      "round": "8",
+      "char": "y",
+      "target": "S3cRet-Xy"
+    }
+  },
+  {
+    "t": 1788705454379,
+    "path": "/collect",
+    "query": "?round=9&char=Z&target=S3cRet-XyZ",
+    "params": {
+      "round": "9",
+      "char": "Z",
+      "target": "S3cRet-XyZ"
+    }
+  },
+  {
+    "t": 1788705455313,
+    "path": "/collect",
+    "query": "?round=10&char=7&target=S3cRet-XyZ7",
+    "params": {
+      "round": "10",
+      "char": "7",
+      "target": "S3cRet-XyZ7"
+    }
+  },
+  {
+    "t": 1788705456245,
+    "path": "/collect",
+    "query": "?round=0&char=S&target=S",
+    "params": {
+      "round": "0",
+      "char": "S",
+      "target": "S"
+    }
+  },
+  {
+    "t": 1788705457221,
+    "path": "/dmi",
+    "query": "?%3Cmeta%20name=%22csrf%22%20content=%22CSRF-TOKEN-S3cRet-XyZ7%22%3E",
+    "params": {
+      "<meta name": "\"csrf\" content=\"CSRF-TOKEN-S3cRet-XyZ7\">"
+    }
+  },
+  {
+    "t": 1788705458497,
+    "path": "/font",
+    "query": "?char=S",
+    "params": {
+      "char": "S"
+    }
+  },
+  {
+    "t": 1788705458504,
+    "path": "/font",
+    "query": "?char=-",
+    "params": {
+      "char": "-"
+    }
+  },
+  {
+    "t": 1788705458505,
+    "path": "/font",
+    "query": "?char=7",
+    "params": {
+      "char": "7"
+    }
+  },
+  {
+    "t": 1788705458508,
+    "path": "/font",
+    "query": "?char=3",
+    "params": {
+      "char": "3"
+    }
+  },
+  {
+    "t": 1788705458508,
+    "path": "/font",
+    "query": "?char=Z",
+    "params": {
+      "char": "Z"
+    }
+  },
+  {
+    "t": 1788705458510,
+    "path": "/font",
+    "query": "?char=X",
+    "params": {
+      "char": "X"
+    }
+  },
+  {
+    "t": 1788705458511,
+    "path": "/font",
+    "query": "?char=R",
+    "params": {
+      "char": "R"
+    }
+  },
+  {
+    "t": 1788705458514,
+    "path": "/font",
+    "query": "?char=y",
+    "params": {
+      "char": "y"
+    }
+  },
+  {
+    "t": 1788705458514,
+    "path": "/font",
+    "query": "?char=t",
+    "params": {
+      "char": "t"
+    }
+  },
+  {
+    "t": 1788705458516,
+    "path": "/font",
+    "query": "?char=e",
+    "params": {
+      "char": "e"
+    }
+  },
+  {
+    "t": 1788705458518,
+    "path": "/font",
+    "query": "?char=c",
+    "params": {
+      "char": "c"
+    }
+  }
+]

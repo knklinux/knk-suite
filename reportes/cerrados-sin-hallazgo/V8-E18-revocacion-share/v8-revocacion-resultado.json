@@ -1,0 +1,26 @@
+{
+  "fecha": "2026-09-06T15:48:14.322Z",
+  "gate": {
+    "A": "user-hDI8xdVTY6zahW36WXAsVD8e",
+    "B": "user-i5BbE1RcOASut3ys0nx5Ory7"
+  },
+  "ciclosEjecutados": 0,
+  "ciclosConHallazgo": 0,
+  "veredicto": "BLOQUEADO",
+  "detalle": [
+    {
+      "ciclo": 1,
+      "nonce": "V8-mtpzkead-1",
+      "pasos": {
+        "a_convA": 403
+      },
+      "reAccesos": [],
+      "hallazgo": false,
+      "notas": [
+        "BLOQUEO ANTI-ABUSO (patrón E16) — abortar sin más intentos"
+      ],
+      "conversacionId": null,
+      "bloqueo": true
+    }
+  ]
+}

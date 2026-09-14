@@ -1,0 +1,80 @@
+# Evidencia V9 — /api/auth/handoff/inspect|bind
+# Fecha: 2026-09-06 · Cuentas propias A/B (sintéticas) · ritmo ≥2,2 s · 6 peticiones POST totales
+# Scope: chatgpt.com (API del propio dominio, en scope). Sin borrado, sin datos de terceros.
+
+## 0) Compuerta de sesiones (gate previo a cualquier sonda)
+- GET https://chatgpt.com/backend-api/me — sesión A → 200, id raíz: ua-843a2c24-ec65-45b7-a1d3-291ef854ddd8
+- GET https://chatgpt.com/backend-api/me — sesión B → 200, id raíz: ua-49c91ddd-5592-4e67-a6fc-74428f3de36f
+- GATE A≠B: OK (evidencia: evidencia-poc/http/v9-gate-sesiones.json)
+
+## 1) Sondas empíricas — POST /api/auth/handoff/inspect
+
+### Sonda 1 — anónimo, sin cookies, UA sesión, token falso de 64 chars
+POST /api/auth/handoff/inspect HTTP/1.1
+Host: chatgpt.com
+Content-Type: application/json
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... Chrome/131.0.0.0 Safari/537.36
+
+{"token":"AAAA...A (64)"}
+
+→ HTTP 403 {"error":"forbidden"}
+
+### Sonda 2 — con sesión completa de A (cookies), mismo token falso
+POST /api/auth/handoff/inspect (misma petición + Cookie: <jar A completo>)
+→ HTTP 403 {"error":"forbidden"}
+
+### Sonda 3 — anónimo + Origin: https://chatgpt.com + Referer (simulando same-origin real)
+→ HTTP 404 {"error":"not_found"}
+
+### Sonda 4 — anónimo + UA móvil iPhone (flujo mobile-web) + Origin chatgpt.com
+→ HTTP 404 {"error":"not_found"}
+
+### Sonda 5 — token de 300 chars (control de validación de longitud)
+→ HTTP 404 {"error":"not_found"}
+
+### Sonda 6 — cuerpo inválido (token vacío / sin campo / array)
+POST {"token":""}    → 403 {"error":"forbidden"}
+POST {}              → 403 {"error":"forbidden"}
+POST {"token":["A"]} → 403 {"error":"forbidden"}
+
+## 2) Lectura estática del bundle (4813494d-hrplraurzfyvxb10.js)
+
+- El flujo "handoff" es el mecanismo de CONTINUACIÓN DE SESIÓN móvil→web:
+  el móvil genera un token en el fragmento (#token=...) de la URL que abre en
+  el navegador de escritorio, y el SPA lo canjea por una sesión NextAuth.
+- Activación: solo si el HTML SSR trae `data-mobile-web-handoff-enabled="true"`
+  en <body>. En los dos HTML SSR descargados el atributo NO está presente →
+  el endpoint está deshabilitado / roll-out parcial para nuestra sesión/IP.
+- Shape (bundle, literal):
+    POST /api/auth/handoff/inspect   body {"token"}  → {operation: sign_in|switch_account|reuse_existing, purpose, account_id, redirect_to}
+    POST /api/auth/handoff/bind      body {"token", "authorization_url"} → {url} (autorización Identity atada al token)
+  Ambas fetch con credentials: "same-origin", mode: "same-origin", redirect: "error".
+  El cliente valida token.length > límite y descarta el fragmento localmente.
+
+## 3) Interpretación del 403 vs 404 (comportamiento Edge + WAF)
+- Con Content-Type: application/json y cuerpo JSON presente → 403 forbidden
+  (Edge/WAF rechaza antes de llegar al router: token inexistente o feature flag off).
+- Sin Content-Type exacto (o vacío) → 404 not_found.
+- En ambos casos la respuesta NO revela: existencia del token, longitud esperada,
+  operación, ni ningún dato de sesión. Cero filtración de información.
+
+## 5) Ampliación de la sonda (misma sesión, tras revisión)
+
+### Sondas /api/auth/handoff/bind (endpoint del canje, no probado antes)
+POST /api/auth/handoff/bind con {token:<64 falso>, authorization_url:"https://auth.openai.com/authorize?..."}
+- anónimo                 → 403 {"error":"forbidden"}
+- con sesión A completa    → 403 {"error":"forbidden"}
+- auth_url maliciosa (evil.example) → 403 {"error":"forbidden"} (no revela si valida dominio)
+- sin authorization_url    → 403 {"error":"forbidden"} (orden de validación no filtrable)
+
+### Verificación en DOM REAL (CDP, cuenta A viva, chatgpt.com/)
+- document.body.dataset.mobileWebHandoffEnabled → **null** (flag OFF)
+- window.__oaiMobileWebHandoffInspection → **undefined** (el script del handoff nunca se arma)
+- location.hash → vacío
+
+### Quién genera el token (bundle, exhaustivo)
+- Solo existen 2 endpoints handoff en todo el SPA: inspect y bind — AMBOS consumidores.
+- No hay ruta de generación web (no /handoff/create|new|generate en backend-api).
+- El token nace en la app móvil y viaja en el fragmento #token= de la URL que abre.
+- Las credenciales de A/B (cookies de sesión + access token) NO son tokens handoff:
+  autentican sesiones, no sirven como input de inspect/bind (403 verificado con ambas).

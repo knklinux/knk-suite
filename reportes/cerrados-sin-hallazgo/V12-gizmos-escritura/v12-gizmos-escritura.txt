@@ -1,0 +1,33 @@
+=== V12 — ESCRITURA CRUZADA EN GIZMOS ===
+ts: 2026-09-06T23:08:05.504Z
+objetivo: g-690cc1705f6c81919a5fce7f7f34a95e (GPT de A, recurso del propio investigador)
+atacante: cuenta B (no propietaria) — ACL declarada can_write:false
+métodos: PATCH/PUT/POST /backend-api/gizmos/{gid} — body NO destructivo
+
+── Fase 0: compuerta de salud (sin sonda /conversation) ──
+veredicto compuerta: ✅ SANAS
+
+── Fase 1: baseline ──
+[baseline A (propietaria)] 200 | {"gizmo":{"id":"g-690cc1705f6c81919a5fce7f7f34a95e","organization_id":"org-2ZzWQqPamH2Zvi03yawAnzBD","short_url":"g-690cc1705f6c81919a5fce7f7f34a95e-rumbo-zero","author":{"user_id":"user-wmDQBlND2AogkDIyRvKx2iGm__42d8177a-86c3-48c0-81c3-b4a3139bf08b","user_email":null,"display_name":null,"link_to":n
+fingerprint A (prop): {"instructions":"null","name":"Rumbo Zero","short_url":"g-690cc1705f6c81919a5fce7f7f34a95e-rumbo-zero","updated":"2026-09-05T22:41:05.898374+00:00","version":null}
+[baseline B (lectura)] 200 | {"gizmo":{"id":"g-690cc1705f6c81919a5fce7f7f34a95e","organization_id":"org-2ZzWQqPamH2Zvi03yawAnzBD","short_url":"g-690cc1705f6c81919a5fce7f7f34a95e-rumbo-zero","author":{"user_id":"user-wmDQBlND2AogkDIyRvKx2iGm__42d8177a-86c3-48c0-81c3-b4a3139bf08b","user_email":null,"display_name":null,"link_to":n
+ACL declarada de B: {"can_read":true,"can_view_config":false,"can_write":false,"can_delete":false,"can_export":false,"can_share":false}
+
+── Fase 2: cruzada B → GPT de A (body no destructivo) ──
+[PATCH /backend-api/gizmos/{gid}] 405 | {"detail":"Method Not Allowed"}
+[PUT /backend-api/gizmos/{gid}] 405 | {"detail":"Method Not Allowed"}
+[POST /backend-api/gizmos/{gid}] 405 | {"detail":"Method Not Allowed"}
+[PATCH /backend-api/gizmos/{gid}/about] 405 | {"detail":"Method Not Allowed"}
+
+── Fase 3: verificación de integridad (A relee) ──
+[post A (propietaria)] 200 | {"gizmo":{"id":"g-690cc1705f6c81919a5fce7f7f34a95e","organization_id":"org-2ZzWQqPamH2Zvi03yawAnzBD","short_url":"g-690cc1705f6c81919a5fce7f7f34a95e-rumbo-zero","author":{"user_id":"user-wmDQBlND2AogkDIyRvKx2iGm__42d8177a-86c3-48c0-81c3-b4a3139bf08b","user_email":null,"display_name":null,"link_to":n
+fingerprint A (post): {"instructions":"null","name":"Rumbo Zero","short_url":"g-690cc1705f6c81919a5fce7f7f34a95e-rumbo-zero","updated":"2026-09-05T22:41:05.898374+00:00","version":null}
+integridad: ✅ SIN CAMBIOS
+
+── Fase 4: control negativo (id sintético) ──
+[PATCH SYNTHETIC-GPT-002] 405 | {"detail":"Method Not Allowed"}
+
+── Fase 5: veredicto ──
+✅ SIN HALLAZGO — todas las rutas de escritura bloqueadas (401/403/404/405). ACL can_write:false ENFORZADA en escritura. Vector cerrado.
+
+resumen intentos: [{"m":"PATCH","r":"/backend-api/gizmos/{gid}","status":405},{"m":"PUT","r":"/backend-api/gizmos/{gid}","status":405},{"m":"POST","r":"/backend-api/gizmos/{gid}","status":405},{"m":"PATCH","r":"/backend-api/gizmos/{gid}/about","status":405}]

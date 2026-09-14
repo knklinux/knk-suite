@@ -1,0 +1,4 @@
+# V10 fase 3 — rutas de catálogo/instalación read-only — 2026-09-06T17:55:21.250Z
+[GET] /backend-api/gizmos/discovery/global → 404 | {"detail":"Not Found"}
+[GET] /backend-api/gizmos/discovery/recommended → 404 | {"detail":"Not Found"}
+[POST] /backend-api/gizmos → 422 | {"detail":[{"type":"missing","loc":["body","files"],"msg":"Field required","input":null},{"type":"missing","loc":["body","instructions"],"msg":"Field required","input":null},{"type

@@ -1,0 +1,5 @@
+# V10 fase 4 — cierre de la superficie de lectura — 2026-09-06T17:59:39.352Z
+# gate: exit 0 · 0 escrituras · sin /conversation
+[GET] /backend-api/gizmos/SYNTHETIC-GPT-001 → 404 | {"detail":"Expected non-None but got None"}
+[GET] /backend-api/plugins/SYNTHETIC-PLUGIN-001 → 404 | {"detail":"Not Found"}
+[GET] /backend-api/plugins/SYNTHETIC-PLUGIN-001/uninstall → 405 | {"detail":"Method Not Allowed"}

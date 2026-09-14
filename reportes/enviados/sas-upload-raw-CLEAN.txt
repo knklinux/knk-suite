@@ -1,0 +1,63 @@
+--- [0a] gate: session A (user.id=user-hDI8xdVTY6zahW36WXAsVD8e) [vía salud] ---
+HTTP 200
+user-hDI8xdVTY6zahW36WXAsVD8e
+
+--- [0b] gate: session B (user.id=user-i5BbE1RcOASut3ys0nx5Ory7) [vía salud] ---
+HTTP 200
+user-i5BbE1RcOASut3ys0nx5Ory7
+
+--- [1] B: crear reserva de subida ---
+HTTP 200
+{"eligible":true,"reservation_id":"file_00000000074c81f4a68fe4d8768391be","upload_url":"https://sdmntprnortheu.oaiusercontent.com/files/00000000-074c-81f4-a68f-e4d8768391be/raw?se=2026-09-06T18%3A23%3A43Z&sp=w&sv=2026-02-06&sr=b&scid=[REDACTED-UUID]&skoid=[REDACTED-UUID]&sktid=[REDACTED-TENANT]&skt=2026-09-06T11%3A19%3A33Z&ske=2026-09-07T11%3A19%3A33Z&sks=b&skv=2026-02-06&sig=[REDACTED]","upload_url_expires_at":"2026-09-06T18:23:43.269870Z","reservation_expires_at":"2026-09-06T18:33:43.269870Z"}
+
+--- [2] T1: B sube contenido legítimo (baseline) ---
+HTTP 201
+
+
+--- [3] T2: REPLAY — B reutiliza la misma upload_url (2º PUT) ---
+HTTP 201
+
+
+--- [4] T3: A (otra cuenta) sube a la upload_url de B ---
+HTTP 201
+
+
+--- [5] T4: replay SIN cookies (SAS bearer-agnóstico?) ---
+HTTP 201
+
+
+--- [6] T5: A reclama la reserva de B (claim_and_finish) ---
+HTTP 200
+{"file_id":"file_00000000074c81f4a68fe4d8768391be","event":"file.processing.started","message":"Start processing file: file_00000000074c81f4a68fe4d8768391be","progress":0.0,"extra":null}
+{"file_id":"file_00000000074c81f4a68fe4d8768391be","event":"file.processing.error","message":"Error processing file file_00000000074c81f4a68fe4d8768391be: 403, message='user_mismatch', url='http://[INTERNAL-ENDPOINT-REDACTED]/finish_upload'","progress":null,"extra":{"error_code":"permission_error"}}
+
+
+--- [7] T6: B reclama su reserva (claim_and_finish) ---
+HTTP 200
+{"file_id":"file_00000000074c81f4a68fe4d8768391be","event":"file.processing.started","message":"Start processing file: file_00000000074c81f4a68fe4d8768391be","progress":0.0,"extra":null}
+{"file_id":"file_00000000074c81f4a68fe4d8768391be","event":"file.processing.error","message":"Error processing file file_00000000074c81f4a68fe4d8768391be: file_size_mismatch","progress":null,"extra":{"error_code":"internal_error"}}
+
+
+--- [8] B: lista sus nodos (localizar el libfile) ---
+HTTP 200
+{"items":[{"kind":"file","access_kind":"owned","id":"libfile_3eb770f72cc481919cac38941c1ab6ea","name":"SYNTHETIC-E13-SCREENSHOT.txt","parent_directory_id":"libdir_6cd9c65376188191b554a676565d1416","is_root":null,"file_id":"file_00000000730482108c09663802875ff6","mime_type":"text/plain","file_extension":"txt","file_size_bytes":33,"library_file_category":"text","state":"ready","thumbnail_url":null,"thumbnail_preview_url":null,"updated_at":"2026-09-06T17:01:16.554501Z","record_creation_time":"2026-09-06T17:01:16.554501Z","file_upload_time":"2026-09-06T17:01:11Z","file_processed_time":"2026-09-06T17:01:16.302111Z","app_id":null,"origination_message_id":null,"origination_thread_id":null,"library_artifact_type":null,"hide_from_file_search":null,"gizmo_id":null,"is_project":null,"trashed_at":null,"expires_at":null},{"kind":"file","access_kind":"owned","id":"libfile_0caef3d520348191a67292bf227ceaf6","name":"SYNTHETIC-B-FILE-001(2).txt","parent_directory_id":"libdir_6cd9c65376188191b554a676565d1416","is_root":null,"file_id":"file_00000000d11081f485079c7095f0f0a7","mime_type":"text/plain","file_extension":"txt","file_size_bytes":108,"library_file_category":"text","state":"ready","thumbnail_u
+
+--- [9] B: content_url del libfile ---
+HTTP 200
+{"content_url":"https://chatgpt.com/backend-api/estuary/content?id=file_00000000730482108c09663802875ff6&ts=496866&p=fsns&cid=1&sig=[REDACTED]&v=0"}
+
+--- [10] B: descarga el contenido del archivo (verdad de fondo) ---
+HTTP 403
+{"detail":"File stream access denied."}
+
+--- [11] A: lee detalle del libfile resultante de B ---
+HTTP 404
+{"detail":"Not Found"}
+
+--- [12] A: content_url del libfile resultante de B ---
+HTTP 404
+{"detail":"File not found"}
+
+--- [13] LIMPIEZA: B borra el archivo sintético de su biblioteca ---
+HTTP 200
+{"success":true}

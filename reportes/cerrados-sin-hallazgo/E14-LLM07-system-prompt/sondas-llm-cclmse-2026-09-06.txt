@@ -1,0 +1,77 @@
+# Sondas superficie LLM (metodología CLLMSE) — 2026-09-06 (tarde)
+
+Sesión: target chatgpt.com · scope ["chatgpt.com","cdn.oaistatic.com"] · OPPLAN aprobado
+Cuentas: A=ua-843a2c24-… (user-hDI8xdVTY6zahW36WXAsVD8e) · B=ua-49c91ddd-… (jar B)
+Ritmo: 2,2 s entre peticiones · UA: knk-suite-researcher/2.0 bug-bounty-research
+Peticiones: solo GET de lectura · sin mutaciones · sin recursos ajenos reales
+
+## 1) Verificación de sesiones (200 OK en ambas)
+
+GET /backend-api/me (cookie jar)
+- A → 200 {"id":"ua-843a2c24-ec65-45b7-a1d3-291ef854ddd8",…}
+- B → 200 {"id":"ua-49c91ddd-5592-4e67-a6fc-74428f3de36f",…}
+→ Sesiones vivas y distintas (gate A≠B ✅)
+
+## 2) Elegibilidad de superficies LLM (con Bearer de A)
+
+GET /backend-api/aip/first-party/eligibility
+→ 200 {"health":false,"finances":false,"health_eligibility":{"status":"unavailable","sidebar_visible":false}}
+→ AIP/ledger (finanzas personales, OAuth Plaid) NO disponible para la cuenta. Gated.
+
+GET /backend-api/gizmos/bootstrap?limit=3
+→ 200 {"gizmos":[{… "g-690cc1705f6c81919a5fce7f7f34a95e" (Rumbo Zero) …}]}
+→ Custom GPTs disponibles en la cuenta.
+
+GET /backend-api/gizmos/u/user-hDI8xdVTY6zahW36WXAsVD8e
+→ 200 {"items":[],"cursor":null}
+
+GET /backend-api/workspace_plugins/list → 404 (ruta no registrada así)
+GET /backend-api/chatgpt/workspace/connector/mcp/list → 404 (ídem)
+→ La superficie MCP/workspace-plugin existe en el SPA (routeKeys
+  chatgpt.workspace_plugins.upload_with_custom_mcp_servers,
+  chatgpt.workspace.connector.mcp.create, CodexMCPElicitation) pero sus
+  endpoints no están en /backend-api con esas rutas (probablemente
+  workspace de pago / otra base / feature flag).
+
+## 3) Vector LLM07 (system prompt leakage) — GPT compartido por enlace
+
+Recurso del propio investigador: g-690cc1705f6c81919a5fce7f7f34a95e (Rumbo Zero),
+share_recipient="link" (compartido solo por enlace, NO público por defecto).
+
+GET /backend-api/gizmos/g-690cc1705f6c81919a5fce7f7f34a95e con sesión de B (no propietaria)
+→ 200 · gizmo.instructions = **null** · author sin email · display sin config
+→ La API filtra las instrucciones del GPT para no-propietarios. ✅
+
+GET /backend-api/gizmos/g-690cc1705f6c81919a5fce7f7f34a95e con sesión de A (propietaria)
+→ 200 · current_user_permission = {
+    can_read:true, can_view_config:false, can_write:false, can_delete:false,
+    can_export:false, can_share:false }
+   memory_enabled:true · memory_scope:"global"
+→ Permisos de objeto correctamente escalonados. ✅
+
+GET https://chatgpt.com/g/g-690cc…-rumbo-zero (SSR sin auth)
+→ 200 · 1.143.347 bytes · el short_url solo aparece en hreflang/link alternates;
+  NO aparece el payload del GPT (instructions/system_prompt del GPT ausentes;
+  las cadenas "instructions"/"system_prompt" del HTML pertenecen a config
+  general del SPA: skill-creator, ads "Ask ChatGPT", onboarding).
+→ El SSR no filtra instrucciones del GPT. ✅
+
+## 4) Veredicto (aplicando GUIA_INFORMES_BUGBOUNTY §3/§8)
+
+- AIP/ledger: gated (sin superficie). No testeable.
+- MCP/workspace connectors: rutas API no expuestas en /backend-api con estas
+  cuentas. No testeable sin workspace de pago. (Anotado para futura sesión.)
+- Custom GPTs: control de acceso a nivel de objeto CORRECTO (instructions null
+  para no-propietario, can_view_config:false, can_write:false). Sin hallazgo.
+  El vector SSRF-via-Actions (Tenable 2025) NO aplica: el GPT de la cuenta no
+  tiene Actions y crear GPTs con Actions con estas cuentas no se ha habilitado.
+- Sin hallazgo reportable en esta pasada. Coherente con el resto del día.
+
+## 5) Pendientes LLM-metodología (para decidir en próxima sesión)
+
+- V9 handoff (/api/auth/handoff/bind|inspect) — takeover lógico, único con
+  sesiones A/B vivas y riesgo bajo de duplicado.
+- V10 plugin install cross-account (install_attempt_id/account_id) — riesgo
+  medio-alto de duplicado (research público de plugins/SSRF custom GPTs).
+- MCP connectors: re-probar si alguna cuenta obtiene workspace con
+  upload_with_custom_mcp_servers (cadena de suministro MCP → rug-pull).
