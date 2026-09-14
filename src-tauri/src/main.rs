@@ -10,6 +10,198 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct BackendState(Arc<Mutex<Option<Child>>>);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// WATCHDOG DE PROCESOS (Windows)
+//
+// Problema: si el exe muere a lo bruto (taskkill /F, crash, cierre forzado),
+// el node hijo sobrevive y se queda en el :8086 — el siguiente arranque
+// encuentra el puerto ocupado y sirve el backend VIEJO sin saberlo.
+//
+// Solución en dos capas:
+//   1. JOB OBJECT con JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: el node se asigna
+//      a un job cuyo handle vive dentro del exe. Cuando el exe muere —de la
+//      manera que sea— el kernel cierra el handle y mata todo el árbol.
+//   2. Barrido de arranque: huérfanos de sesiones anteriores (exe sin job,
+//      fallo al crear el job…) se detectan por línea de comandos y se matan.
+//
+// En no-Windows: no-op. El cierre normal ya lo cubre stop_backend.
+// ═══════════════════════════════════════════════════════════════════════════
+#[cfg(windows)]
+mod process_watchdog {
+use std::os::windows::process::CommandExt;
+    // FFI directa a kernel32 — evita el crate `windows` y sus conflictos de
+    // versión con el que arrastra Tauri.
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateJobObjectW(lpJobAttributes: *mut core::ffi::c_void, lpName: *const u16) -> isize;
+        fn SetInformationJobObject(
+            hJob: isize,
+            JobObjectInformationClass: u32,
+            lpJobObjectInformation: *mut core::ffi::c_void,
+            cbJobObjectInformationLength: u32,
+        ) -> i32;
+        fn AssignProcessToJobObject(hJob: isize, hProcess: isize) -> i32;
+    }
+
+    const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: u32 = 9;
+    const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
+
+    #[repr(C)]
+    struct IoCounter {
+        read_operation_count: u64,
+        write_operation_count: u64,
+        other_operation_count: u64,
+        read_transfer_count: u64,
+        write_transfer_count: u64,
+        other_transfer_count: u64,
+    }
+
+    #[repr(C)]
+    struct JoBasicLimits {
+        per_process_user_time_limit: i64,
+        per_job_user_time_limit: i64,
+        limit_flags: u32,
+        minimum_working_set_size: usize,
+        maximum_working_set_size: usize,
+        active_process_limit: u32,
+        affinity: usize,
+        priority_class: u32,
+        scheduling_class: u32, // = SchedulingClass en JOBOBJECT_BASIC_LIMIT_INFORMATION
+    }
+
+    #[repr(C)]
+    struct JoIoLimits {
+        io_counter: IoCounter,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory_used: usize,
+        peak_job_memory_used: usize,
+    }
+
+    // JOBOBJECT_EXTENDED_LIMIT_INFORMATION = basic + io + pad a 16 bytes.
+    #[repr(C)]
+    struct JoExtendedLimits {
+        basic: JoBasicLimits,
+        io: JoIoLimits,
+        _pad_out: (), // (sin padding: el struct real son 144 bytes exactos)
+    }
+
+    /// Crea el job "asilo" con KILL_ON_JOB_CLOSE y mete al proceso dentro.
+    /// Devuelve el handle crudo (isize); quien lo recibe debe retenerlo
+    /// tanto como quiera que el árbol viva: al morir el exe el kernel
+    /// cierra el último handle y mata node y cuanto él spawnée.
+    pub fn bind_backend_child(child_handle: isize) -> Result<isize, String> {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+            if job == 0 {
+                return Err("CreateJobObjectW falló".to_string());
+            }
+            let mut limits = JoExtendedLimits {
+                basic: JoBasicLimits {
+                    per_process_user_time_limit: 0,
+                    per_job_user_time_limit: 0,
+                    limit_flags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                    minimum_working_set_size: 0,
+                    maximum_working_set_size: 0,
+                    active_process_limit: 0,
+                    affinity: 0,
+                    priority_class: 0,
+                    scheduling_class: 0,
+                },
+                io: JoIoLimits {
+                    io_counter: IoCounter {
+                        read_operation_count: 0,
+                        write_operation_count: 0,
+                        other_operation_count: 0,
+                        read_transfer_count: 0,
+                        write_transfer_count: 0,
+                        other_transfer_count: 0,
+                    },
+                    process_memory_limit: 0,
+                    job_memory_limit: 0,
+                    peak_process_memory_used: 0,
+                    peak_job_memory_used: 0,
+                },
+                _pad_out: (),
+            };
+            let ok = SetInformationJobObject(
+                job,
+                JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                &mut limits as *mut JoExtendedLimits as *mut core::ffi::c_void,
+                std::mem::size_of::<JoExtendedLimits>() as u32,
+            );
+            if ok == 0 {
+                return Err("SetInformationJobObject falló".to_string());
+            }
+            if AssignProcessToJobObject(job, child_handle) == 0 {
+                return Err("AssignProcessToJobObject falló".to_string());
+            }
+            Ok(job)
+        }
+    }
+
+    /// ¿Este PID es un node nuestro (backend/index.js)? Consulta la línea de
+    /// comandos vía PowerShell CIM — wmic está deprecado y ausente en Win11.
+    #[allow(dead_code)] // utilidad de diagnóstico
+    fn is_our_backend(pid: u32) -> bool {
+        let out = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                    "(Get-CimInstance Win32_Process -Filter 'ProcessId={}').CommandLine",
+            ])
+            .creation_flags(super::CREATE_NO_WINDOW)
+            .output();
+        let Ok(out) = out else { return false };
+        let s = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        s.contains("node") && s.contains("backend") && s.contains("index.js")
+    }
+
+    /// Mata los node huérfanos de sesiones anteriores (exe anterior sin job,
+    /// backend arrancado a mano…). Lista node.exe por CIM y filtra por línea
+    /// de comandos: jamás toca un node que no sea nuestro backend.
+    pub fn sweep_orphans() {
+        let out = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | ForEach-Object { \"$($PSItem.ProcessId)|$($PSItem.CommandLine)\" }",
+            ])
+            .creation_flags(super::CREATE_NO_WINDOW)
+            .output();
+        let Ok(out) = out else { return };
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            // Formato: "<pid>|<commandline>"
+            let Some((pid_str, cmdline)) = line.split_once('|') else { continue };
+            let Ok(pid) = pid_str.trim().parse::<u32>() else { continue };
+            if std::process::id() == pid { continue; }
+            let low = cmdline.to_lowercase();
+            if !(low.contains("backend") && low.contains("index.js")) { continue; }
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .creation_flags(super::CREATE_NO_WINDOW)
+                .output();
+            eprintln!("[knkLinux] node huérfano del arranque anterior (PID {pid}): terminado");
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod process_watchdog {
+    /// No-op fuera de Windows.
+    pub fn bind_backend_child(_child_handle: isize) -> Result<isize, String> { Ok(0) }
+    pub fn sweep_orphans() {}
+}
+
+
+/// Handle del Job Object que envuelve al node, retenido por el exe.
+/// El cierre normal (Drop al salir de main) y la muerte bruta del proceso
+/// liberan el último handle → el kernel mata el árbol del backend.
+static JOB_HANDLE: Mutex<Option<isize>> = Mutex::new(None);
+
 #[derive(Clone, Serialize)]
 struct BackendStatus {
     running: bool,
@@ -48,6 +240,20 @@ fn node_executable() -> String {
     }
 }
 
+
+/// Log del watchdog a fichero: en un exe GUI el stderr no se ve.
+fn wd_log(msg: &str, log_path: &Path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log_path) {
+        use std::io::Write;
+        let _ = writeln!(f, "[{ts}] {msg}", ts = chrono_free_now());
+    }
+}
+
+fn chrono_free_now() -> String {
+    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    format!("{}s", d.as_secs())
+}
+
 fn spawn_backend_process(app: &AppHandle) -> Result<Child, String> {
     let entry = backend_entry(app);
     if !entry.exists() { return Err(format!("No existe el backend: {}", entry.display())); }
@@ -73,6 +279,28 @@ fn spawn_backend_process(app: &AppHandle) -> Result<Child, String> {
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|error| format!("No se pudo arrancar Node/backend: {error}"))
+        .and_then(|mut child| {
+            // Watchdog: asigna el node a un Job Object "asilo". Si el exe
+            // muere de cualquier manera, el kernel mata el árbol completo.
+            let raw = {
+                use std::os::windows::io::AsRawHandle;
+                child.as_raw_handle() as isize
+            };
+            match process_watchdog::bind_backend_child(raw) {
+                Ok(job) => {
+                    if let Ok(mut h) = JOB_HANDLE.lock() { *h = Some(job); }
+
+                    eprintln!("[knkLinux] watchdog: node en Job Object (kill-on-exe-death activo)");
+                    wd_log(&format!("watchdog: node PID {} asignado a Job Object (kill-on-exe-death activo)", child.id()), &root.join("backend-watchdog.log"));
+                }
+
+                Err(e) => {
+                    eprintln!("[knkLinux] watchdog no disponible: {e}");
+                    wd_log(&format!("watchdog NO disponible: {e} — el node puede quedar huérfano si el exe muere"), &root.join("backend-watchdog.log"));
+                }
+            }
+            Ok(child)
+        })
 }
 
 fn health_ready() -> bool { TcpStream::connect((HOST, PORT)).is_ok() }
@@ -155,6 +383,9 @@ fn main() {
         .manage(BackendState(Arc::new(Mutex::new(None))))
         .invoke_handler(tauri::generate_handler![backend_status, open_assistant, close_assistant])
         .setup(|app| {
+            // Watchdog: limpia node huérfanos de sesiones anteriores antes
+            // de arrancar el nuestro (evita hablar con un backend VIEJO).
+            process_watchdog::sweep_orphans();
             let state = app.state::<BackendState>();
             let status = start_backend(&app.handle(), &state);
             if let Some(main) = app.get_webview_window("main") {
