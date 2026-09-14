@@ -9,7 +9,7 @@
     "build": "cd frontend && npm run build",
     "setup": "cd frontend && npm install && cd .. && npm install",
     "test": "node backend/test.js",
-    "test:cameras": "node backend/camera-index.test.js && node backend/camera-audit.test.js && node backend/public-webcams.test.js && node backend/lan-relay.test.js && node backend/exposed-cameras.test.js && node backend/camera-findings.test.js",
+    "test:cameras": "node backend/camera-index.test.js && node backend/camera-audit.test.js && node backend/public-webcams.test.js && node backend/lan-relay.test.js && node backend/exposed-cameras.test.js && node backend/camera-findings.test.js && node backend/hls-proxy-audit.test.js",
     "lab:revocation": "node backend/local-revocation-lab.js",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

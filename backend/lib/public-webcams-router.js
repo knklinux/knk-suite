@@ -24,6 +24,7 @@ const publicWebcams = require('./public-webcams');
 const lanRelay = require('./lan-relay');
 const exposedCameras = require('./exposed-cameras');
 const cameraFindings = require('./camera-findings');
+const hlsAudit = require('./hls-proxy-audit');
 
 const router = express.Router();
 
@@ -645,6 +646,56 @@ router.post('/cameras/exposed/findings', (req, res) => {
 
 // Vista previa del mismo plan, sin escribir nada: qué se convertiría, con qué
 // severidad y qué se descarta. La UI la usa para avisar antes de tocar la BD.
+// ── Check de seguridad: proxy HLS mal configurado ───────────────────
+// Analiza un manifiesto m3u8 y detecta si el proxy que lo sirve reescibe
+// recursos de hosts ajenos al origen (patrón de proxy abierto: túnel
+// SSRF / evitación de allowlists). Con create:true lo convierte en
+// hallazgo de la misión con evidencia (mismo almacén que los hallazgos
+// de exposición). La sonda activa es opt-in (probe:true) y habla SOLO
+// con el proxy auditado, nunca con el destino directo.
+router.post('/cameras/exposed/hls-audit', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const manifestUrl = typeof body.url === 'string' ? body.url.trim() : '';
+    if (!/^https?:\/\//i.test(manifestUrl)) {
+      return res.status(400).json({ ok: false, error: 'Falta url del manifiesto (https://…)' });
+    }
+    let manifestBody = typeof body.manifest === 'string' ? body.manifest : null;
+    if (!manifestBody) {
+      try {
+        const man = await fetchUpstreamText(manifestUrl);
+        manifestBody = man.body;
+      } catch (e) {
+        return res.json({ ok: false, error: `No se pudo obtener el manifiesto: ${e.message}` });
+      }
+    }
+    const analysis = hlsAudit.analyzeManifest({ url: manifestUrl, body: manifestBody });
+    let probe = null;
+    if (body.probe === true) probe = await hlsAudit.probeProxy({ analysis });
+    const out = { ok: true, analysis, probe };
+    if (body.create === true) {
+      const session = db.getOrCreateSession();
+      const conv = cameraFindings.convertHlsAudit({
+        analysis,
+        manifestUrl,
+        probe,
+        store: findingsStore(session.id),
+        sessionId: session.id,
+        writeEvidence: ({ name, text }) => {
+          const file = cameraFindings.writeEvidenceFile(cameraFindings.defaultEvidenceDir(), { name, text });
+          try { db.stmts.insertEvidence.run(session.id, null, name, 'text', file); } catch {}
+          return file;
+        },
+      });
+      out.conversion = conv;
+    }
+    out.recommendation = cameraFindings.hlsRecommendationFor(analysis);
+    res.json(out);
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 router.post('/cameras/exposed/findings/preview', (req, res) => {
   try {
     const body = req.body || {};

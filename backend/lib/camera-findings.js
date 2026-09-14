@@ -30,6 +30,9 @@ const path = require('path');
 const exposed = require('./exposed-cameras');
 
 const TYPE = 'camera-exposed';
+// Hallazgo de check de seguridad: proxy HLS que reescibe hosts ajenos
+// (patrón de proxy abierto). El análisis vive en lib/hls-proxy-audit.js.
+const TYPE_HLS = 'hls-open-proxy';
 const MODULE_ID = 'camaras-expuestas';
 const MAX_TEXT_BYTES = 256 * 1024;
 
@@ -430,8 +433,169 @@ function convertAndStore({ targets, sessionId, store, opts = {} } = {}) {
   };
 }
 
+// ── Check: proxy HLS mal configurado (reescritura de hosts ajenos) ─────
+// Convierte el análisis de lib/hls-proxy-audit.js en un hallazgo de la
+// misión con el mismo contrato que los de exposición: severidad razonada,
+// details estructurados, fichero de evidencia reproducible y dedup por
+// activo (el activo aquí es el HOST del proxy, no una IP de índice).
+
+function hlsSeverityFor(analysis) {
+  if (!analysis || !analysis.finding) return 'info';
+  if (analysis.probe && analysis.probe.attempted && analysis.probe.reachable) return 'high';
+  if (analysis.allowlisted === false) return 'high';
+  return 'medium';
+}
+
+function hlsSummaryFor(analysis) {
+  const host = analysis.manifestHost || '(manifiesto sin host)';
+  if (!analysis.finding) return `Proxy HLS correcto — ${host}: sin reescritura de hosts ajenos (${analysis.kind})`;
+  const bits = [`reescritura de host ajeno ${analysis.foreignHost}`];
+  if (analysis.allowlisted === false) bits.push('fuera de allowlists públicas conocidas');
+  if (analysis.probe && analysis.probe.attempted) bits.push(analysis.probe.reachable ? 'reenvío confirmado por sonda' : 'sonda sin confirmar reenvío');
+  return `Proxy HLS posiblemente abierto — ${host}: ${bits.join(" · ")}`;
+}
+
+function hlsRecommendationFor(analysis) {
+  if (!analysis.finding) {
+    return 'Sin acción: el manifiesto no muestra reescritura de hosts ajenos. Repetir el check si cambia el origen del stream.';
+  }
+  return [
+    'Confirmar que el destino embebido es legítimo y está autorizado; si el proxy acepta ?url= arbitrario, cualquiera puede usarlo como túnel (SSRF hacia tu red, evitación de filtrado de salida).',
+    'Limitar la reescritura a una allowlist de hosts/CDN y rechazar explícitamente lo demás; registrar los destinos denegados.',
+    'Re-evaluar tras el cambio con la sonda activa (opt-in) hasta ver el rechazo (4xx/5xx del proxy).',
+  ].join(' ');
+}
+
+function hlsEvidenceText(analysis, { manifestUrl, now, probe = null } = {}) {
+  const stamp = now || new Date().toISOString();
+  const lines = [
+    'KNK SUITE — Evidencia de check: proxy HLS mal configurado',
+    '================================================================',
+    `Tipo:        ${TYPE_HLS} (análisis de manifiesto; sonda activa solo si se pidió)`,
+    `Fecha:       ${stamp}`,
+    `Manifiesto:  ${manifestUrl}`,
+    `Host origen: ${analysis.manifestHost || '—'}`,
+    `Veredicto:   ${analysis.finding ? 'REESCRITURA DE HOST AJENO' : 'sin reescritura de hosts ajenos'} (${analysis.kind}, score ${analysis.score}/100)`,
+    '',
+    '-- Checks ----------------------------------------------------------',
+    ...analysis.checks.map((c) => `- [${c.severity}] ${c.id}: ${c.detail}`),
+    '',
+    '-- Recursos embebidos observados (muestra) -------------------------',
+    ...(analysis.embedded.length
+      ? analysis.embedded.map((e) => `- ${e.line}`)
+      : ['- (ninguno)']),
+    '',
+    ...(probe && probe.attempted ? [
+      '-- Sonda activa (a través del proxy auditado) ----------------------',
+      `Petición:    ${probe.requested || analysis.embedded[0].line}`,
+      `Estado:      ${probe.status} · ${probe.reachable ? 'REENVIÓ al host ajeno' : 'el proxy no reenvió'} · ${probe.latencyMs} ms`,
+      `Nota:        ${probe.note}`,
+      '',
+    ] : []),
+    '-- Reproducir ------------------------------------------------------',
+    `$ curl -s '${manifestUrl}' | head -40`,
+    '# Comprobar si los recursos embebidos apuntan a hosts ajenos al origen.',
+    '# Sonda manual del recurso embebido (la misma petición que haría un cliente):',
+    ...(analysis.embedded.length ? [`$ curl -s -o /dev/null -w "%{http_code}" -r 0-0 "${analysis.embedded[0].line}"`] : []),
+    '',
+    'NOTA: el análisis es pasivo sobre el manifiesto. La sonda activa es',
+    'opt-in y habla SOLO con el proxy auditado, nunca con el destino directo.',
+    'El hallazgo nace como candidato: verificar alcance y titularidad antes',
+    'de reportar nada a nadie.',
+    '',
+  ];
+  return lines.join('\n').slice(0, MAX_TEXT_BYTES);
+}
+
+function hlsEvidenceName(analysis, stampISO) {
+  const host = (analysis.manifestHost || 'hls').replace(/[^a-zA-Z0-9.-]/g, '_');
+  const safeStamp = String(stampISO || new Date().toISOString()).replace(/[:.]/g, "-");
+  return `hls-proxy-${host}-${safeStamp}.txt`;
+}
+
+/** details estructurados del hallazgo HLS (misma disciplina que findingDetails). */
+function hlsFindingDetails(analysis, { manifestUrl, evidence = [], now, probe = null } = {}) {
+  return {
+    asset: analysis.manifestHost || manifestUrl,
+    manifestUrl: String(manifestUrl || ''),
+    module: MODULE_ID,
+    source: 'hls-proxy-audit',
+    semantics: 'manifest-analysis',
+    verification: analysis.probe && analysis.probe.attempted ? 'sonda-activa-ejecutada' : 'candidato-no-verificado',
+    kind: analysis.kind,
+    proxySuspected: !!analysis.proxySuspected,
+    foreignHost: analysis.foreignHost || null,
+    foreignCount: analysis.foreignCount || 0,
+    allowlisted: analysis.allowlisted,
+    segments: analysis.segments,
+    checks: analysis.checks,
+    score: analysis.score,
+    probe: probe && probe.attempted ? { status: probe.status, reachable: !!probe.reachable, latencyMs: probe.latencyMs, note: probe.note } : null,
+    analyzedAt: now,
+    evidence,
+  };
+}
+
+/**
+ * Orquestador del check HLS: convierte el análisis (y su sonda opcional) en
+ * hallazgo + evidencia usando el mismo adaptador `store` que convertAndStore.
+ * Dedup: si ya existe un hallazgo HLS con el mismo details.manifestUrl, no
+ * duplica (devuelve { duplicate: true, findingId }).
+ */
+function convertHlsAudit({ analysis, manifestUrl, probe = null, store, writeEvidence, now, sessionId } = {}) {
+  if (!analysis || typeof analysis.finding !== 'boolean') {
+    return { ok: false, error: 'falta el análisis del manifiesto' };
+  }
+  const stamp = now || new Date().toISOString();
+  const a = probe ? { ...analysis, probe } : analysis;
+  const result = {
+    ok: true,
+    type: TYPE_HLS,
+    finding: a.finding,
+    severity: hlsSeverityFor(a),
+    summary: hlsSummaryFor(a),
+    manifestUrl: String(manifestUrl || ''),
+    analyzedAt: stamp,
+  };
+  if (!a.finding) {
+    result.note = 'Sin hallazgo: el manifiesto no reescibe hosts ajenos. No se escribe nada.';
+    return result;
+  }
+  if (!store || typeof store.addFinding !== 'function') {
+    return { ok: false, error: 'falta el almacén de hallazgos' };
+  }
+  // dedup por URL de manifiesto (mismo activo = mismo proxy auditado)
+  const existing = typeof store.listFindings === 'function' ? store.listFindings(sessionId) : [];
+  const dup = existing.find((f) => f && f.details && f.details.manifestUrl === result.manifestUrl);
+  if (dup) {
+    return { ...result, duplicate: true, findingId: dup.id || null, note: 'Ya existía un hallazgo para este manifiesto; no se duplica.' };
+  }
+  const name = hlsEvidenceName(a, stamp);
+  const text = hlsEvidenceText(a, { manifestUrl, now: stamp });
+  let evidencePath = null;
+  if (typeof writeEvidence === 'function') {
+    try { evidencePath = writeEvidence({ name, text }); } catch { evidencePath = null; }
+  }
+  const row = {
+    type: TYPE_HLS,
+    summary: result.summary,
+    severity: result.severity,
+    details: hlsFindingDetails(a, { manifestUrl, evidence: evidencePath ? [evidencePath] : [], now: stamp, probe: a.probe }),
+  };
+  const id = store.addFinding(row);
+  result.created = {
+    id: typeof id === "object" && id != null ? id.lastInsertRowid : id,
+    severity: row.severity,
+    summary: row.summary,
+    evidence: evidencePath,
+    foreignHost: a.foreignHost || null,
+  };
+  return result;
+}
+
 module.exports = {
   TYPE,
+  TYPE_HLS,
   MODULE_ID,
   SEVERITY_ORDER,
   DEFAULTS,
@@ -452,4 +616,11 @@ module.exports = {
   planConversion,
   convertTargets,
   convertAndStore,
+  hlsSeverityFor,
+  hlsSummaryFor,
+  hlsRecommendationFor,
+  hlsEvidenceText,
+  hlsEvidenceName,
+  hlsFindingDetails,
+  convertHlsAudit,
 };
