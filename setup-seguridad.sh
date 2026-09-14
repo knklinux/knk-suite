@@ -28,22 +28,45 @@ echo "  ✅ DNS: Cloudflare + Quad9"
 # ── 2. FIREWALL (KILL SWITCH) ──────────────────────
 echo ""
 echo "🛡️  [2/4] Configurando firewall..."
-iptables -F 2>/dev/null
-iptables -A INPUT -i lo -j ACCEPT
-iptables -A OUTPUT -o lo -j ACCEPT
-iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-iptables -A INPUT -s 192.168.0.0/16 -j ACCEPT
-iptables -A OUTPUT -d 192.168.0.0/16 -j ACCEPT
-iptables -A INPUT -i docker0 -j ACCEPT
-iptables -A OUTPUT -o docker0 -j ACCEPT
-iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
-iptables -A OUTPUT -p udp --dport 67:68 -j ACCEPT
-iptables -A INPUT -p udp --sport 67:68 -j ACCEPT
-iptables -A OUTPUT -j DROP
-iptables -A INPUT -j DROP
-echo "  ✅ Kill switch activo"
+# M-5: snapshot de las reglas previas ANTES de tocar nada (nunca destructivo)
+mkdir -p ~/.knk-suite
+BACKUP_IPTS=~/.knk-suite/iptables-backup-$(date +%Y%m%d-%H%M%S).rules
+if command -v iptables-save >/dev/null 2>&1; then
+  iptables-save > "$BACKUP_IPTS" 2>/dev/null && echo "  💾 Snapshot iptables previo → $BACKUP_IPTS"
+  echo "      Restaurar con: sudo iptables-restore < $BACKUP_IPTS"
+fi
+
+# Si Docker está activo y no se confirma explícitamente, se omite el flush:
+# `iptables -F` borra las cadenas DOCKER y rompe puertos publicados. Con
+# KNK_IPTABLES_CONFIRM=1 se aplica igualmente (el snapshot permite revertir).
+DOCKER_ACTIVO=false
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  DOCKER_ACTIVO=true
+fi
+if [ "$DOCKER_ACTIVO" = "true" ] && [ "${KNK_IPTABLES_CONFIRM:-0}" != "1" ]; then
+  echo "  ⚠️  Docker ACTIVO y sin KNK_IPTABLES_CONFIRM=1 → firewall OMITIDO (snapshot guardado igualmente)"
+  echo "      Para aplicar el kill switch: KNK_IPTABLES_CONFIRM=1 sudo bash setup-seguridad.sh"
+else
+  if [ "$DOCKER_ACTIVO" = "true" ]; then
+    echo "  ⚠️  Docker activo con KNK_IPTABLES_CONFIRM=1 — aplicar flush puede romper puertos publicados"
+  fi
+  iptables -F 2>/dev/null
+  iptables -A INPUT -i lo -j ACCEPT
+  iptables -A OUTPUT -o lo -j ACCEPT
+  iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+  iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+  iptables -A INPUT -s 192.168.0.0/16 -j ACCEPT
+  iptables -A OUTPUT -d 192.168.0.0/16 -j ACCEPT
+  iptables -A INPUT -i docker0 -j ACCEPT
+  iptables -A OUTPUT -o docker0 -j ACCEPT
+  iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+  iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+  iptables -A OUTPUT -p udp --dport 67:68 -j ACCEPT
+  iptables -A INPUT -p udp --sport 67:68 -j ACCEPT
+  iptables -A OUTPUT -j DROP
+  iptables -A INPUT -j DROP
+  echo "  ✅ Kill switch activo"
+fi
 
 # ── 3. WIREGUARD ───────────────────────────────────
 echo ""

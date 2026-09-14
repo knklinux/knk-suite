@@ -1,0 +1,56 @@
+{
+  "origen": "bugbounty-suite",
+  "tipo": "registro-mision",
+  "programa": "Crypto.com",
+  "plataforma": "HackerOne",
+  "target": "api.experiences.crypto.com",
+  "generado": "2026-08-30",
+  "autor": "knkLinux",
+  "_desc": "Tarjeta de seguimiento de los 3 candidatos SEND-READY. Checklist anti-rechazo aplicada como evidencia por tarea. NO abrir a triage sin checklist en verde.",
+  "tareas": [
+    {
+      "titulo": "GO #1 · Line-items/checkout — manipular cantidad/precio entre cálculo y confirm",
+      "fase": "exploit",
+      "estado": "en_progreso",
+      "severidad": "medium",
+      "comando": "node docs/moneybox-sesion/probar-checkout-manipulacion.mjs  (Fase A: descubir forma · Fase B con PERMITIR_MUTACIONES=1 + checkout-cfg.json)",
+      "evidencias": [
+        "CHECKLIST aplicada (reportReadiness 10 gates):",
+        "  rep-1 inScope ✅ · rep-2 no-dup ⚠️(pendiente buscar) · rep-3 política checkout ⚠️(leer) · rep-4 explotable ⏳(confirm acepta total alterado) · rep-5 screenshots ❌ · rep-6 req/resp ❌ · rep-7 PoC ✅ · rep-8 sin PII ✅ · rep-9 ≥2 ⏳ · rep-10 Medium ✅",
+        "Gate crítico a cerrar: rep-4 — comparar TOTAL_CALCULO vs TOTAL_CONFIRM en el sondeo.",
+        "Cortafuegos: no completar cobro (bloquea /3ds, /submit, /charge, redirects).",
+        "Borrador: docs/reportes/BORRADOR-line-items-checkout.md",
+        "METODOLOGÍA biz aplicada (bizlogic.js) — clase biz-precio:",
+        "  bizChain 4/8 en verde hoy: biz-g0 flujo mapeado ✅ · biz-g2 campo confiado ✅ · biz-g5 sin transacción real ✅ · biz-g7 scope ✅",
+        "  Pendientes de sesión (evidencia capturable en 1 login): biz-g1 baseline raw HTTP · biz-g3 servidor acepta total alterado · biz-g4 impacto (TOTAL_CALCULO vs TOTAL_CONFIRM) · biz-g6 reproducible 2ª vez",
+        "  Veredicto formal: sendable=false (bloqueado por evidencia pendiente de sesión, no por invalidez)."
+      ]
+    },
+    {
+      "titulo": "GO #2 · Redeem/rewards — canje múltiple o saldo que no decrece",
+      "fase": "exploit",
+      "estado": "en_progreso",
+      "severidad": "medium",
+      "comando": "node docs/moneybox-sesion/probar-logica-negocio.mjs  (sesión · /redeem · /rewards · /purchase-rewards)",
+      "evidencias": [
+        "CHECKLIST aplicada:",
+        "  rep-1 inScope ✅ · rep-2 no-dup ⚠️(buscar double-redeem) · rep-3 rewards in-scope ⚠️(leer política) · rep-4 ⏳(canje doble/saldo estancado) · rep-5 ❌ · rep-6 ❌ · rep-7 ✅ · rep-8 ✅ · rep-9 ⏳(2 canjes) · rep-10 Medium ✅",
+        "Usar SOLO reward de test de la cuenta propia; sin consumir valor real.",
+        "Gate crítico: rep-4 — canje ≥2 sobre la misma reward o balance que no decrece."
+      ]
+    },
+    {
+      "titulo": "GO #3 · Free-entry/status — saltarse el pago vía {status} manipulable",
+      "fase": "exploit",
+      "estado": "en_progreso",
+      "severidad": "medium",
+      "comando": "node docs/moneybox-sesion/probar-logica-negocio.mjs  (sesión · /free-entry/status)",
+      "evidencias": [
+        "CHECKLIST aplicada:",
+        "  rep-1 inScope ✅ · rep-2 ✅/⚠️ · rep-3 política ⚠️(¿bypass de pago excluido?) · rep-4 ⚠️(probar salto del gate de pago, no 'ver gratis') · rep-5 ❌ · rep-6 ❌ · rep-7 ✅ · rep-8 ✅ · rep-9 ⏳ · rep-10 Medium (fácil de desmontar)",
+        "Prioridad MÍNIMA de los 3: agotar #1 antes de tocarlo.",
+        "Gate crítico: rep-4 — PoC debe demostrar el salto real del gate de pago de forma reproducible."
+      ]
+    }
+  ]
+}

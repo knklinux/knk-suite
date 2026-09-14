@@ -1,0 +1,122 @@
+{
+  "source": "OpenAI — Bug Bounty en Bugcrowd (Brief oficial, actualizado 19-ago-2026)",
+  "platform": "bugcrowd",
+  "program": "openai",
+  "version": "2026-09",
+  "activeWhen": {
+    "description": "Política específica del PROGRAMA (además del Código de Conducta Bugcrowd). Se activa cuando la sesión de la suite tiene program=OpenAI.",
+    "briefUrl": "https://bugcrowd.com/engagements/openai",
+    "briefUpdated": "2026-08-19",
+    "ficha": {
+      "estado": "En progreso (desde 2023-04-11) · Triaje acelerado",
+      "safeHarbor": "Parcial (política basada en disclose.io)",
+      "taxonomia": "Bugcrowd VRT (P1-P5); OpenAI puede degradar prioridad/recompensa con explicación",
+      "validacion": "75% aceptados/rechazados en ≤9 días · Pago medio $1.353 · 590 vulns recompensadas",
+      "bonusMaximo": "$100.000",
+      "requisito": "⚠️ Verificar identidad en Bugcrowd antes de poder enviar informes a este compromiso"
+    }
+  },
+  "scope": {
+    "rule": "SOLO los grupos objetivo del Brief. Ante cualquier duda → support@bugcrowd.com ANTES de actuar.",
+    "targets": [
+      { "grupo": "Objetivos de API", "assets": ["api.openai.com", "infra Azure al servicio de la API (storage, VMs)"], "recompensa": "P1 $2.000-6.500 · P4 $200-500 · bonus $100.000" },
+      { "grupo": "ChatGPT", "assets": ["chat.openai.com (Plus, logins, suscripciones, plugins de OpenAI, plugins PROPIOS, resto de funciones)", "ChatGPT Plugins"], "recompensa": "P1 $2.000-6.500 · bonus $100.000", "notas": ["Incluir el ID de conversación (URL) si demuestras el issue con una conversación", "NO testing sobre plugins de terceros (la store)"] },
+      { "grupo": "Objetivos corporativos de terceros", "assets": ["Info corporativa confidencial de OpenAI expuesta vía proveedores (Workspace, Jira, Notion, Zendesk, Stripe...)"], "recompensa": "P1 $1.000-2.500 · bonus $5.000", "notas": ["NO se autoriza testing contra esas empresas", "Informes multi-documento con causa raíz común pagan más; sueltos = P4/P5 sin recompensa", "Incluir proceso de descubrimiento detallado"] },
+      { "grupo": "Teclas API OpenAI", "assets": ["Claves sk-/sess- encontradas en Internet"], "recompensa": "P1 $250-2.500 (bono mensual)", "notas": ["🚨 JAMÁS por Bugcrowd → formulario https://forms.gle/h8bQ5YKWzXb8FtrQ8", "Publicarlas por Bugcrowd = fuera de alcance + resta puntos", "No crear claves para reportarlas; no repetir la misma clave"] },
+      { "grupo": "Org de Investigación OpenAI", "assets": ["https://*.openai.org (web + API)"], "recompensa": "P1 $1.250-3.500" },
+      { "grupo": "Otros objetivos OpenAI", "assets": ["openai.com", "*.openai.com", "platform.openai.com/playground", "docs de desarrolladores", "resto de infra propia orientada a Internet"], "recompensa": "P1 $1.250-2.500" },
+      { "grupo": "Codex (CLI, web, escritorio)", "assets": ["Codex CLI/web/desktop", "navegador integrado en la app ChatGPT", "extensión Chrome hehggadaopoacecdllhhajmbjkdcmajg"], "recompensa": "P1 $1.250-2.500 · bonus $100.000", "notas": ["Informe browser/extensión → target 'Codex Desktop'", "Chromium upstream sin modificar → VRP de Google (fuera de scope)", "UI-only → P5 sin recompensa salvo impacto P1"] },
+      { "grupo": "Modelos privados/inéditos", "assets": ["Acceso a modelos no anunciados ni en docs de la API"], "recompensa": "Elegible, gravedad según sensibilidad del modelo" },
+      { "grupo": "Subdomain takeover", "assets": ["Subdominios SIN USAR de OpenAI"], "recompensa": "En scope" }
+    ],
+    "interesadosEn": "XSS almacenado/reflejado, CSRF, SQLi, auth/authz, exposición de datos, pagos, consultas a modelos pre-lanzamiento/privados, OAuth/SSRF/credenciales en el sistema de plugins, bypass real de restricciones impuestas por Codex."
+  },
+  "reglasDeOro": [
+    "Probar solo conforme al Brief; ante inconsistencia, manda el Brief.",
+    "Reportar rápido las vulnerabilidades descubiertas.",
+    "No violar privacidad, no interrumpir sistemas, no destruir datos, no dañar la UX.",
+    "Comunicación de vulnerabilidades SOLO por el programa Bugcrowd de OpenAI.",
+    "Confidencialidad hasta que OpenAI autorice (objetivo: ≤90 días).",
+    "Solo sistemas in-scope; respetar los out-of-scope.",
+    "No acceder/modificar/usar datos ajenos más allá del mínimo; si aparecen: PARAR + informar + borrar copias.",
+    "Solo tus propias cuentas (o una de test @bugcrowdninja.com).",
+    "Divulgación incondicional: sin extorsión ni coacción (anula el Safe Harbor)."
+  ],
+  "modelIssues": {
+    "title": "⛔ PARAR. LEER. NO DESNADAR.",
+    "rule": "Los issues de contenido de prompts/respuestas del modelo están ESTRICTAMENTE fuera de alcance y NO se recompensan (salvo impacto de seguridad adicional, directamente verificable, en un servicio in-scope).",
+    "fuera": [
+      "Jailbreaks / bypasses de seguridad (DAN y similares)",
+      "Conseguir que el modelo diga cosas malas / cómo hacerlas / escriba código malicioso",
+      "Alucinaciones (fingir acciones, secretos, ejecución de código)",
+      "Comportamiento raro con tokens 'especiales' o sobreentradas largas"
+    ],
+    "dondeReportar": {
+      "comportamiento": "https://openai.com/form/model-behavior-feedback",
+      "chatFeedback": "https://openai.com/form/chat-model-feedback",
+      "safetyProgram": "https://bugcrowd.com/engagements/openai-safety",
+      "academico": "disclosure@openai.com (pesos, datos de entrenamiento)"
+    },
+    "sandboxes": [
+      { "nombre": "Code Interpreter (Python)", "uname": "kernel 2016: Linux ... 4.4.0 #1 SMP Sun Jan 10 15:06:54 PST 2016", "whoami": "sandbox", "nota": "Ejecutar Python ahí es funcionalidad del producto" },
+      { "nombre": "Agent Mode", "uname": "kernel 2025: Linux 454b19a9c4b5 6.12.13 ... 2025 x86_64 GNU/Linux", "whoami": "oai", "nota": "IP compartida con terminal.local/chrome.local en /etc/hosts = dentro" },
+      { "nombre": "Container tool (GPT-5)", "uname": "gVisor sin red externa", "whoami": "root (NO es escalada de privilegios)", "nota": "root solo dentro del contenedor; reportes de root ahí no válidos" }
+    ],
+    "reglaSandbox": "Un informe de RCE real debe demostrar salida DIFIERENTE a estos indicadores. Ejecutar código DENTRO de ellos es funcionalidad, fuera de alcance y sin recompensa.",
+    "promptInjection": "Interesa la inyección a nivel de APLICACIÓN con transferencia de datos de usuario de baja interacción a un tercero; NO las mitigaciones internas del modelo."
+  },
+  "credenciales": {
+    "cuentas": "Cuenta propia o de test con correo @bugcrowdninja.com (preferido).",
+    "avisos": [
+      "Las pruebas autorizadas NO eximen de los ToS de OpenAI: abusar → rate limit/bloqueo/baneo.",
+      "Los escáneres automáticos pueden desencadenar bloqueos.",
+      "Si te limitan/bloquean: esperar a que expire (no hay desbloqueo manual).",
+      "Baneo → support@bugcrowd.com con explicación (número limitado de veces; nunca por contenido).",
+      "Evasión de baneo repetida → fuera del programa. Sin reembolsos."
+    ]
+  },
+  "outOfScope": {
+    "general": [
+      "Temas de modelo (ver modelIssues)",
+      "DoS, fuerza bruta (incluida de sus APIs), password spraying, spam, scraping masivo",
+      "Destruir/corromper datos ajenos · credenciales robadas/filtradas · acceso a datos ajenos más allá del mínimo",
+      "Ataques físicos/sociales/phishing contra personal, oficinas, wifi o propiedad de OpenAI",
+      "Cualquier sistema no listado explícitamente como in-scope",
+      "Servidores/protocolos de correo (SPF, DMARC, DKIM), spam",
+      "SSL/TLS débil o cabeceras ausentes (HSTS) sin PoC funcional · Clickjacking · errores de servidor sin exploit",
+      "Navegadores/plugins EOL · banners de versión de servidor · tokens en ./well-known/ai-plugin.json",
+      "Publicar nombres de paquetes internos (o parecidos) en registros públicos",
+      "Descubrir nombres/features no publicados"
+    ],
+    "especificos": [
+      "pay.openai.com → CNAME a Stripe (programa de Stripe)",
+      "community.openai.com → CNAME a terceros activos",
+      "Bypass de Cloudflare en api.openai.com",
+      "Bypass de bloqueos IP/geobloques con VPN · captchas emulando navegador · página 'ChatGPT is at capacity'",
+      "webs ajenas (ai.com, open.ai), phishing, proxies de ChatGPT, bots de Discord, plugins de navegador que modifican ChatGPT",
+      "Rate limits: solo bypass significativo y sostenido (escala de cientos de requests); exceder temporalmente RPM/TPM/cap = fuera · billing rezagado = fuera",
+      "Enviar shell commands a la VM del Code Interpreter",
+      "Proyectos open source dormidos (recompensa solo en proyectos mantenidos con impacto demostrado)",
+      "Issues que exigen cooperación excesiva del usuario o ingeniería social poco plausible (self-XSS por debug pane, desactivar seguridad del navegador...)",
+      "Cambia contraseña no invalida todos los tokens · añadir usuarios a tu org sin permiso · borrar cuenta sin contraseña · cookies transferibles · imágenes de otros dominios · OpenGraph · compartir presets por link"
+    ]
+  },
+  "safeHarbor": {
+    "proteccion": "OpenAI no emprenderá acciones legales contra quien actúe de buena fe conforme a la política (incluido DMCA). Tu research se considera 'autorizado' bajo CFAA; renuncian a las restricciones de ToS para tu research bajo esta política.",
+    "limites": "OpenAI NO puede autorizar research sobre terceros ni protegerte de acciones legales suyas. Dudas → support@bugcrowd.com ANTES de actuar. OpenAI es CNA (política propia de CVE)."
+  },
+  "checklistPreEnvio": [
+    "¿El asset está en la tabla de scopes de ESTE brief (y no es CNAME excluido)?",
+    "¿Es un issue de seguridad real y NO un asunto de modelo (jailbreak/alucinación/sandbox interno)?",
+    "Si es sandbox: ¿uname -a / whoami / hostname -I DIFIEREN de los indicadores oficiales?",
+    "¿Solo he usado MI cuenta (o @bugcrowdninja.com)?",
+    "¿Datos ajenos: mínimo posible (si aparecieron: paré, borré, documenté)?",
+    "¿PoC reproducible: pasos + request/response raw + curl + producto/versión/OS/configuración?",
+    "¿Si es Codex browser/extensión: target 'Codex Desktop' seleccionado?",
+    "¿VRT honesto + impacto demostrado (no UI-only)?",
+    "¿Confidencialidad mantenida (nada fuera del programa)?",
+    "¿Si son claves sk-/sess-: enviadas por el FORMULARIO (jamás por Bugcrowd)?",
+    "¿Verificación de identidad de Bugcrowd completada?"
+  ],
+  "suiteNota": "Rate limit de la suite fijado a 2000 ms por defecto para este programa: el brief castiga explícitamente la fuerza bruta y los escáneres automáticos pueden bloquear la cuenta sin desbloqueo manual."
+}

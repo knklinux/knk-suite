@@ -1,0 +1,176 @@
+{
+  "source": "Bugcrowd — Código de Conducta (Code of Conduct, actualizado 25 nov 2025)",
+  "platform": "bugcrowd",
+  "version": "2026-08",
+  "activeWhen": {
+    "description": "Esta política se activa automáticamente en la suite cuando el programa parseado pertenece a bugcrowd.com (detectPlatform). Aplica también a CTFs/Eventos Bugcrowd y a la comunidad (Slack, Discord, IRC).",
+    "appliesTo": [
+      "Compromisos de seguridad crowdsourced (programas privados y públicos)",
+      "Ofertas de comunidad: #bugcrowd IRC, Slack de Researcher, Discord",
+      "Eventos de piratería virtuales y en vivo",
+      "Cualquier otro programa o evento de Bugcrowd"
+    ],
+    "interactionsCovered": "Toda interacción con el equipo de Bugcrowd, clientes (program owners) y otros investigadores."
+  },
+  "platformStandards": {
+    "title": "📏 Estándares de Comportamiento de la Plataforma",
+    "description": "Comportamientos inaceptables en Bugcrowd y qué medidas se toman ante un incidente. Bugcrowd se esfuerza por crear un entorno seguro, inclusivo y positivo para el beneficio mutuo de investigadores y clientes.",
+    "behaviors": [
+      { "marks": 1, "name": "Comportamiento Disruptivo", "examples": "Pruebas que causan interrupción al propietario del programa; spamming por actualizaciones de presentaciones; enviar un gran volumen de tickets al soporte." },
+      { "marks": 1, "name": "Comportamiento agresivo", "examples": "Uso de lenguaje poco profesional con propietarios de programas, otros investigadores y empleados de Bugcrowd." },
+      { "marks": 1, "name": "Fuera del alcance", "examples": "Probar o presentar issues fuera del scope del resumen de recompensas, repetidamente o sin seguir el Brief. Un hallazgo de alto impacto fuera de scope SÍ puede enviarse para que lo evalúe Triage; si el propietario no lo acepta, Bugcrowd lo marca 'no aplicable' SIN afectar negativamente al investigador." },
+      { "marks": 1, "name": "Contacto fuera de banda", "examples": "Contactar a un cliente o empleado de Bugcrowd fuera de los límites de la plataforma." },
+      { "marks": 2, "name": "Abuso Duplicado", "examples": "Jugar con el sistema presentando un gran número de envíos duplicados o auto-duplicados." },
+      { "marks": 2, "name": "Divulgación del programa", "examples": "Exponer la existencia de un cliente o programa privado que se ejecuta en Bugcrowd." },
+      { "marks": 3, "name": "Amenaza de divulgación", "examples": "Amenazar con revelar una vulnerabilidad enviada (Twitter, blogs, YouTube, etc.)." },
+      { "marks": 4, "name": "Divulgación no autorizada", "examples": "Vulnerability Sharing: divulgar información confidencial, patentada o personal de un envío. Interactuar o acceder a cuentas y sistemas sin permiso explícito del titular." },
+      { "marks": 4, "name": "Comportamiento abusivo y acoso", "examples": "Lenguaje agresivo/extremo en presentaciones o interacciones. Prohibido: contenido ofensivo (género, orientación, raza, religión, discapacidad, usernames), desnudos/sexual, lenguaje amenazante, intimidación o stalking, contacto personal no invitado, contacto físico inapropiado en eventos, acusaciones injustificadas, ataques personales." },
+      { "marks": 4, "name": "Amenaza de extorsión", "examples": "Amenazar con extorsionar a una empresa, cliente o empleado por ganancias injustas." },
+      { "marks": 5, "name": "Ban Dodge", "examples": "Reactivar o crear una nueva cuenta tras una prohibición permanente." }
+    ],
+    "enforcementScale": [
+      { "marks": 1, "action": "Mensaje de Coaching", "definition": "Mensaje de Bugcrowd explicando el comportamiento inaceptable, orientación para corregirlo y puntos acumulados." },
+      { "marks": 2, "action": "Advertencia", "definition": "Mensaje de advertencia con esquema de consecuencias ante otro incidente y puntos acumulados." },
+      { "marks": 3, "action": "Advertencia final", "definition": "El próximo incidente resulta en suspensión temporal o prohibición de plataforma." },
+      { "marks": 4, "action": "Suspensión temporal", "definition": "Mensaje con la duración de la suspensión y puntos acumulados." },
+      { "marks": 5, "action": "Prohibición de plataforma", "definition": "Más de 5 puntos → eliminación de la plataforma con explicación." }
+    ],
+    "caducidad": "Incidentes de 1 y 2 marcas caducan a los 12 meses (cuentan solo si un patrón de comportamiento precede al nuevo incidente). Los de 4 y 5 marcas NUNCA expiran. Bugcrowd puede ajustar la gravedad y añadir sanciones (prohibiciones prolongadas, eliminación inmediata del programa o permanente).",
+    "reincorporacion": "Tras prohibición de plataforma se puede solicitar revisión de reincorporación después de 1 año completo (Portal de Soporte); puede no aceptarse según la gravedad.",
+    "reportar": "¿Ves a un investigador violando el Código? Repórtalo al Equipo de Soporte de Bugcrowd en el Portal de Soporte.",
+    "discretion": "Todas las decisiones de cumplimiento y elegibilidad son a discreción de Bugcrowd, finales y privadas. Dudas sobre una acción en tu cuenta → Soporte de Bugcrowd.",
+    "terms": "Participar implica aceptar los Términos y Condiciones y los Términos de Divulgación Estándar de Bugcrowd."
+  },
+  "aiPrinciples": {
+    "title": "🧠 Principios de IA de Bugcrowd",
+    "description": "Principios, infraestructura, protocolos de manejo de datos y controles de seguridad para las funciones de IA accesibles por el usuario (AI Triage Assistant, AI Analytics). Misión: Crowd + AI — ingenio humano amplificado por la velocidad y escala de la máquina.",
+    "certifications": "ISO 27001 · SOC 2 · SOC 3 · NIST 800-53",
+    "principles": [
+      {
+        "name": "Nunca exponer información privada",
+        "meaning": "El uso de IA se rige estrictamente por las políticas de privacidad y seguridad de datos existentes (ISO 27001, SOC 2, SOC 3, NIST 800-53).",
+        "forYou": "No se permite que terceros entrenen modelos de IA, LLM o IA generativa con datos de clientes o investigadores. El propietario del programa puede desactivar las funciones de IA en cualquier momento (Control Global de LLM)."
+      },
+      {
+        "name": "Mantener a los humanos al tanto",
+        "meaning": "La IA empodera y asiste; en servicios totalmente administrados (triage, pentesting) el juicio, la empatía y la experiencia humanas siguen siendo esenciales.",
+        "forYou": "En triage y pentest administrado se ofrece revisión humana antes de entregar resultados. Los humanos siempre deciden qué está dentro y fuera de los límites."
+      },
+      {
+        "name": "Transparencia y rendición de cuentas",
+        "meaning": "Los sistemas de IA están diseñados para ser transparentes y gobernables.",
+        "forYou": "El propietario de la organización puede habilitar/deshabilitar las funciones de IA desde el Control Global de LLM; desactivarlas corta el contexto que el servicio de datos da a la capa de IA (verificado por auditorías)."
+      },
+      {
+        "name": "Actuar de manera justa y sin discriminación",
+        "meaning": "Compromiso con un uso justo de la IA: sin perpetuar ni crear discriminación.",
+        "forYou": "No se usa la IA para apuntar, perfilar o tratar distinto a nadie por características protegidas (raza, género, origen nacional...)."
+      },
+      {
+        "name": "Empoderar a la comunidad mediante GenAI responsable",
+        "meaning": "Las directrices GenAI son parte del Código de Conducta (ver sección GenAI de esta política).",
+        "forYou": "Eres PLENAMENTE responsable del comportamiento de tus herramientas GenAI: no te eximen de las reglas de la plataforma ni del scope del programa. Debes verificar manualmente la exactitud y reproducibilidad de todo hallazgo asistido por GenAI — los resultados automatizados o no verificados NO se aceptan como envíos válidos."
+      }
+    ],
+    "architecture": {
+      "title": "Arquitectura y seguridad de la IA de Bugcrowd",
+      "models": "Toda la inferencia ocurre dentro de la nube aislada privada de Bugcrowd; sin conectividad externa. Modelos con motor lógico para análisis de vulnerabilidades, resumen y asistencia de triage, o para procesamiento de datos e incrustaciones vectoriales.",
+      "isolation": "Modelo de servicio segregado: los servicios de datos y los de procesamiento de IA están aislados. El servicio de datos solo da contexto a la capa de IA tras verificar permisos de usuario y que el Control Global de LLM esté activo.",
+      "hitl": "Humanos-en-el-bucle (HITL): las funciones de IA son de SOLO LECTURA — no pueden modificar estados de reportes, disparar pagos ni enviar comunicaciones externas. Toda acción requiere aprobación humana manual.",
+      "faq": [
+        { "q": "¿La IA tiene acceso directo a la base de datos?", "a": "No. Interactúa con la plataforma vía APIs desde capas que imponen los permisos de nivel de usuario existentes." },
+        { "q": "¿Cómo evita la contaminación cruzada o fuga de datos?", "a": "Servicios de datos y de IA aislados (modelo de servicio segregado); contexto solo con permisos verificados y LLM control habilitado." },
+        { "q": "¿Cómo se controla el riesgo de inyección de prompts?", "a": "Asumen que un adversario cualificado siempre podrá saltarse las barandillas del LLM, así que mitigan a nivel de arquitectura: acceso de solo lectura, acceso a datos limitado al nivel de permisos del usuario que la usa, y cero conectividad externa (inferencia local en su nube privada)." }
+      ]
+    },
+    "relevanciaCaza": "Para ti como researcher: el triage puede estar asistido por IA (con revisión humana detrás). Tus envíos con ayuda GenAI deben ser verificados y reproducibles por ti — la IA de Bugcrowd no valida por ti, y los resultados no verificados se rechazan. La IA del programa es solo-lectura y no decide pagos ni estados sin humano."
+  },
+  "rules": {
+    "conductaBasica": {
+      "seAmable": "Sé amable. Respeto y profesionalidad en todas las comunicaciones y comportamiento, en cumplimiento de los Estándares de Comportamiento de la Plataforma.",
+      "seEtico": "Sé ético. No invadas intencionalmente a los clientes o a Bugcrowd. Tu trabajo es romper defectos tecnológicos y de lógica de negocio, pero al encontrar una debilidad: REPORTARLA PARA QUE SE ARREGLE, no explotarla.",
+      "ayudaAMejorar": "Ayuda a mejorar la comunidad mediante discusiones honestas y perspicaces con compañeros y socios."
+    },
+    "userAgent": {
+      "required": false,
+      "description": "El Código de Conducta de Bugcrowd NO exige User-Agent específico (a diferencia de YesWeHack). Usa el de la suite como buena práctica de identificación responsable.",
+      "example": "knk-suite-researcher/2.0",
+      "consequence": "Sin obligación, pero identificar tus peticiones facilita al triage distinguir testing legítimo de tráfico malicioso."
+    },
+    "automatedScanning": {
+      "prohibited": "No hay prohibición genérica de herramientas, PERO cada programa define su propia política de testing en el Brief (out-of-policy puede anular recompensa). Los escáneres agresivos y el DoS violan el estándar de la plataforma.",
+      "allowed": "Herramientas manuales y peticiones individuales respetuosas; el fuzz automático sigue prohibido salvo autorización explícita del programa.",
+      "rateLimitAdvice": "La suite mantiene un intervalo mínimo transparente de 1.5s por defecto, sin jitter ni camuflaje; revisa el Brief del programa concreto para límites específicos."
+    },
+    "denialOfService": {
+      "prohibited": "No es aceptable causar degradación o interrupción de servicio (estándar de la plataforma; cada Brief lo detalla).",
+      "degradation": "Si una prueba puede afectar disponibilidad o datos reales, detente y consúltalo con el triage antes de continuar."
+    },
+    "disclosure": {
+      "policy": "Divulgación según los Términos de Divulgación Estándar de Bugcrowd + el resumen de recompensas de CADA programa (prevalece sobre este punto).",
+      "rule": "NO compartir información confidencial de vulnerabilidades o de clientes. Los programas privados son privados: ningún hallazgo presentado (incluidos duplicados, fuera de scope o N/A) se divulga sin permiso EXPLÍCITO del cliente.",
+      "publication": "Usa siempre los canales adecuados para divulgar o comunicar sobre envíos. Dudas → soporte de Bugcrowd antes de divulgar.",
+      "dataMinimization": "Si una vulnerabilidad da acceso no deseado a datos: limita el acceso al MÍNIMO requerido para demostrar el impacto. Si encuentras PII, PHI, datos de tarjetas o propiedad: DETENTE, deja de probar y envía el informe de inmediato.",
+      "regulacion": "El acceso a datos personales implica cumplir las leyes aplicables (RGPD UE 2016/679 con Cláusulas Contractuales Estándar, CCPA California 2018)."
+    },
+    "genai": {
+      "title": "⚠️ Uso responsable de herramientas GenAI",
+      "rule": "Solo usar GenAI de forma que EVITE la divulgación de información confidencial, asegurando: (1) cumplimiento de políticas de plataforma y programa; (2) confidencialidad de la información del propietario del programa; (3) confidencialidad de hallazgos entre tú, Bugcrowd y el propietario.",
+      "humanReview": "REVISAR Y VALIDAR MANUALMENTE cualquier reporte creado con ayuda de GenAI antes de enviarlo. Los reportes enviados sin revisión humana están sujetos a RECHAZO.",
+      "suiteNota": "El Chat LLM de la suite es una herramienta GenAI: usa su borrador como base, rellena los huecos de evidencia con datos reales y revisa cada afirmación antes de abrir a triage."
+    },
+    "reportingRequirements": {
+      "mandatory": [
+        "Descripción completa con prueba de concepto y pasos completos de replicación EN EL INFORME ORIGINAL",
+        "Impacto de seguridad real demostrado",
+        "CVSS 3.1 con evaluación honesta del impacto",
+        "Sin PII/PHI/datos de tarjetas en la evidencia (detener y reportar de inmediato si aparecen)",
+        "Mínimo acceso a datos posible para demostrar el impacto"
+      ],
+      "poc": "El PoC debe incluir request/response HTTP reproducible (curl copiable por el triager)",
+      "placeholderBan": "🚫 PROHIBIDO crear presentaciones 'marcador de posición' para reservar hallazgos ('squatting'): informes con título vago y sin pasos de replicación detallados se CIERRAN y deben reenviarse completos para ser considerados."
+    },
+    "scope": {
+      "rule": "SOLO hacer testing en activos listados en el Brief del programa (tabla de scopes). El out-of-scope del Brief prevalece sobre cualquier suposición de la suite.",
+      "outOfScopeNote": "Los activos en 'Out of scope' no deben tocarse bajo ninguna circunstancia; el Brief manda."
+    },
+    "eligibility": {
+      "firstReporter": "Aplica la regla de duplicados del programa concreto (grid de recompensas del Brief)",
+      "noEmployees": "Revisar criterios de elegibilidad del Brief (empleados/contratistas pueden estar excluidos)",
+      "validReport": "La vulnerabilidad debe ser cualificada según el programa y el tipo de activo probado"
+    }
+  },
+  "suiteMapping": {
+    "description": "Cómo la suite cumple por diseño cada norma del Código de Conducta.",
+    "rows": [
+      ["Acción", "Suite", "Bugcrowd"],
+      ["User-Agent personalizado", "✅", "⚪ No exigido (buena práctica)"],
+      ["Respeto del scope", "✅", "✅ Obligatorio (Brief manda)"],
+      ["Rate limiting (1.5s mínimo, sin jitter)", "✅", "✅ Buen estándar"],
+      ["RECON: subfinder (pasivo)", "✅", "✅ Permitido (según Brief)"],
+      ["SCAN: 1 petición headers", "✅", "✅ Manual = OK"],
+      ["FUZZ: 15 rutas (manual-paced)", "⚠️", "🚫 Prohibido sin autorización"],
+      ["Nuclei / escáner de vulns automático", "❌", "🚫 Prohibido (estándar plataforma)"],
+      ["Capturas + curl", "✅", "✅ Requerido (PoC completo)"],
+      ["Divulgación coordinada", "✅", "✅ Requerida + confidencialidad de programas privados"],
+      ["GenAI con revisión humana", "✅", "✅ Requerida (rechazo si no)"],
+      ["Mínimo acceso a datos", "✅", "✅ Obligatorio (PII → detener)"]
+    ]
+  },
+  "checklistPreEnvio": [
+    "¿Dentro del scope del Brief (tabla de scopes)?",
+    "¿Política de testing del Brief revisada (puede anular este documento)?",
+    "¿Rate limit respetado?",
+    "¿Sin PII/PHI/datos de tarjetas en la evidencia?",
+    "¿Acceso a datos limitado al mínimo para demostrar impacto?",
+    "¿PoC completo: descripción + PoC + pasos de replicación en el informe ORIGINAL?",
+    "¿Captura del exploit?",
+    "¿Captura del impacto?",
+    "¿Curl reproducible?",
+    "¿PoC reproducido 2+ veces?",
+    "¿CVSS honesto?",
+    "¿Reporte de GenAI revisado y validado manualmente (obligatorio)?",
+    "¿No es marcador de posición (squatting)?",
+    "¿Confidencialidad mantenida (nada del programa privado fuera de los canales)?"
+  ]
+}
