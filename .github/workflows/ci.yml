@@ -36,3 +36,20 @@ jobs:
       # pushes hechos desde clones sin `npm install` (sin hooksPath).
       - name: Secret scan (tree)
         run: node ci/secret-check.mjs --all
+
+  # Segundo escáner independiente: gitleaks con REGLAS DE LA COMUNIDAD y
+  # escaneo del HISTORIAL COMPLETO (caza secretos que entraron al repo
+  # antes de que existiera el guardián propio). Se complementan:
+  # secret-check.mjs = reglas específicas de KNK + pre-commit preventivo;
+  # gitleaks = base de datos amplia de patrones + auditoría retroactiva.
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historial completo: gitleaks detect escanea TODOS los commits.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          # Token automático del runner: no hace falta crear ninguno.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
