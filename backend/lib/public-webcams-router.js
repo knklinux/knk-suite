@@ -673,4 +673,4 @@ router.post('/cameras/exposed/findings/preview', (req, res) => {
   }
 });
 
-module.exports = { publicCamerasRouter: router };
+module.exports = { publicCamerasRouter: router, rewriteM3U8, hlsHostAllowed };

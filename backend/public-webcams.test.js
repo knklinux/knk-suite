@@ -202,6 +202,37 @@ assert.strictEqual(cams.isValidCameraId('ny511-view', '4436; DROP'), false);
   const badRelay = await cams.relayLocalSnapshot('http://127.0.0.1:8086/api/status');
   assert.strictEqual(badRelay.ok, false);
 
+    // ── proxy HLS: allowlist y reescritura de manifiestos (511NY) ───────
+  const { rewriteM3U8, hlsHostAllowed } = require('./lib/public-webcams-router');
+
+  assert.strictEqual(hlsHostAllowed('https://s52.nysdot.skyvdn.com/rtplive/R5_013/playlist.m3u8'), true);
+  assert.strictEqual(hlsHostAllowed('https://511ny.org/api/getcameras'), true);
+  assert.strictEqual(hlsHostAllowed('https://evil.example.com/seg.ts'), false);
+  assert.strictEqual(hlsHostAllowed('https://511ny.org.evil.com/x.m3u8'), false, 'sufijo enganoso no entra');
+  assert.strictEqual(hlsHostAllowed('not-a-url'), false);
+
+  const master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=176720\nhttps://s52.nysdot.skyvdn.com/rtplive/R5_013/chunklist.m3u8\n';
+  const rew = rewriteM3U8(master, 'https://s52.nysdot.skyvdn.com/rtplive/R5_013/playlist.m3u8');
+  assert.ok(rew.includes('/api/cameras/public/hls-seg?url='), 'la variante pasa al proxy');
+  const resource = rew.split('\n').find((l) => l.trim() && !l.startsWith('#'));
+  assert.ok(!/^https?:\/\//.test(resource.trim()), 'ningun recurso remoto queda sin reescribir');
+
+  const media = '#EXTM3U\n#EXTINF:3.2,\nmedia_1.ts?wowzatoken=abc\n';
+  const rew2 = rewriteM3U8(media, 'https://s52.nysdot.skyvdn.com/rtplive/R5_013/chunklist.m3u8');
+  assert.ok(rew2.includes('hls-seg?url=' + encodeURIComponent('https://s52.nysdot.skyvdn.com/rtplive/R5_013/media_1.ts?wowzatoken=abc')), 'relativa + query absolutizada y reescrita');
+
+  const mixed = '#EXTM3U\n#EXTINF:3.2,\nhttps://evil.example.com/seg.ts\n';
+  const rew3 = rewriteM3U8(mixed, 'https://s52.nysdot.skyvdn.com/rtplive/R5_013/chunklist.m3u8');
+  assert.ok(rew3.includes('https://evil.example.com/seg.ts'), 'host ajeno NO se reescribe (no proxy abierto)');
+
+  const keyed = '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://s52.nysdot.skyvdn.com/key.bin"\n';
+  const rew4 = rewriteM3U8(keyed, 'https://s52.nysdot.skyvdn.com/rtplive/chunklist.m3u8');
+  assert.ok(rew4.includes('URI="/api/cameras/public/hls-seg?url='), 'EXT-X-KEY reescrito');
+
+  const datauri = '#EXTM3U\n#EXT-X-MAP:URI="data:application/vnd.apple.mpegurl;base64,AAAA"\n';
+  assert.strictEqual(rewriteM3U8(datauri, 'https://s52.nysdot.skyvdn.com/x.m3u8'), datauri, 'data: intacto');
+
+
   console.log('public-webcams: OK');
 })().catch((error) => {
   console.error('public-webcams: FALLO —', error.message);
