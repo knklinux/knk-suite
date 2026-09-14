@@ -58,11 +58,14 @@ jobs:
       - name: Embed Node runtime
         run: |
           NODE_VER=v20.18.1
-          mkdir -p src-tauri/runtime
+          # el recurso se declara como "../runtime" (relativo a src-tauri):
+          # el binario debe vivir en la RAÍZ del repo, no en src-tauri/
+          mkdir -p runtime
           curl -fsSL "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-linux-x64.tar.xz" -o /tmp/node.tar.xz
           tar -xJf /tmp/node.tar.xz -C /tmp
-          cp "/tmp/node-${NODE_VER}-linux-x64/bin/node" src-tauri/runtime/node
-          chmod +x src-tauri/runtime/node
+          cp "/tmp/node-${NODE_VER}-linux-x64/bin/node" runtime/node
+          chmod +x runtime/node
+          test -x runtime/node
           # tauri.conf.json resources: añadir runtime/ (se hace con un patch jq
           # para no duplicar en cada build)
           jq '.bundle.resources["../runtime"] = "runtime"' src-tauri/tauri.conf.json > /tmp/conf.json
