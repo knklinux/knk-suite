@@ -8,6 +8,19 @@ const CHILD_PORT = 9344;
 
 // Mini-servidor HTTP para ejecutar expresiones sin agotar las sesiones BiDi
 const http = require('http');
+let TOKEN = '';
+function leerToken() {
+  const f = require('fs').readFileSync(require('path').join(require('os').homedir(), '.knk-suite', 'api-token'), 'utf8').trim();
+  if (!f) throw new Error('token vacio');
+  TOKEN = f;
+}
+function tokenValido(req) {
+  const h = req.headers['x-knk-token'] || '';
+  const m = String(req.headers.cookie || '').match(/(?:^|;\s*)knk_token=([^;]+)/);
+  const v = h || (m ? decodeURIComponent(m[1]) : '');
+  if (!v || v.length !== TOKEN.length) return false;
+  return require('crypto').timingSafeEqual(Buffer.from(v), Buffer.from(TOKEN));
+}
 let wsActual = null;
 let idCmd = 0;
 const pendientes = new Map();
@@ -26,9 +39,11 @@ function conectarBiDi() {
 }
 
 async function main() {
+  leerToken();
   await conectarBiDi();
   let sesId = null;
   const servidor = http.createServer(async (req, res) => {
+    if (!tokenValido(req)) { res.writeHead(401, { 'Content-Type': 'text/plain' }); res.end('no autorizado'); return; }
     let body = '';
     req.on('data', c => body += c);
     req.on('end', async () => {
@@ -62,7 +77,7 @@ async function main() {
       }
     });
   });
-  servidor.listen(SERVER_PORT);
+  servidor.listen(SERVER_PORT, '127.0.0.1');
   console.log('Servidor BiDi persistente en :' + SERVER_PORT);
   // mantener vivo
   setInterval(() => {}, 60000);

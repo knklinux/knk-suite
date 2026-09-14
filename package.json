@@ -15,7 +15,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test:tor": "node backend/tor.test.js",
-    "test:modules": "npm run test:cameras && npm run test:tor",
+    "test:modules": "npm run test:cameras && npm run test:tor && node backend/auth-gate.test.js",
     "smoke": "node backend/smoke-server.js",
     "secret:check": "node ci/secret-check.mjs --all",
     "prepare": "git config core.hooksPath .githooks"
