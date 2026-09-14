@@ -689,6 +689,12 @@ const ID_TO_URL = {
 
 // ── API pública del módulo ──────────────────────────────────────────
 
+// Hook para tests: permite fijar/limpiar el config efectivo sin tocar disco
+// (los tests deben pasar tanto con como sin claves locales reales).
+function setConfigForTest(patch) {
+  CONFIG = patch || {};
+}
+
 function windyApiKey() {
   return process.env.WINDY_API_KEY || CONFIG.windyApiKey || '';
 }
@@ -899,6 +905,7 @@ module.exports = {
   VEGAGERDIN_IMAGE_BASE,
   CALTRANS_DISTRICTS,
   listSources,
+  setConfigForTest,
   listCameras,
   getSnapshot,
   relayLocalSnapshot,

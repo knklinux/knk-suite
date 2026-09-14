@@ -149,6 +149,10 @@ assert.deepStrictEqual(cams.finiteLatLon('36.72', '-4.42'), { lat: 36.72, lon: -
 assert.strictEqual(cams.finiteLatLon('999', '0'), null);
 
 // ── catálogo de fuentes y categorías ────────────────────────────────
+// Aislar del entorno: el proceso de test es efímero, así que vaciar el config
+// garantiza el contrato 'sin clave → configured=false' tanto si esta máquina
+// tiene windyApiKey real en config.json como si no.
+cams.setConfigForTest({});
 const sources = cams.listSources();
 assert.strictEqual(sources.length, 8);
 assert.deepStrictEqual(sources.map((s) => s.id).sort(), ['caltrans', 'dgt', 'digitraffic', 'madrid', 'ny511', 'tfl', 'vegagerdin', 'windy']);

@@ -12,7 +12,6 @@ try { _v13Escanear = require("./v13-detector").escanear; } catch {}
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const dns = require('dns').promises;
 const net = require('net');
 
 const DEFAULT_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36';
@@ -126,6 +125,7 @@ function _throttle() {
 // Con scope explícito, el match textual decide (y puede incluir 127.0.0.1
 // para el laboratorio local si se quiere).
 let _scope = [];
+let _outOfScope = [];
 function setScope(scope) { _scope = Array.isArray(scope) ? scope : []; }
 
 function ip4ToInt(ip) {
@@ -207,9 +207,26 @@ async function hostAllowed(host) {
   return !(await resolvesInternal(h));
 }
 
+function setOutOfScope(scope) { _outOfScope = Array.isArray(scope) ? scope.filter(Boolean) : []; }
+function matchesRule(host, rule) {
+  const raw = String(rule || '').trim().toLowerCase();
+  const wildcard = raw.startsWith('*.');
+  const base = normalizeHost(wildcard ? raw.slice(2) : raw);
+  return !!base && (wildcard ? host.endsWith(`.${base}`) && host !== base : host === base);
+}
 function inScope(host) {
-  if (!_scope.length) return true; // sin scope definido, lo decide hostAllowed
-  const h = String(host || '').trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0];
+  // Sin scope definido → permitido (lo decide hostAllowed): el relay LAN y
+  // las cámaras locales dependen de poder trabajar sin scope explícito.
+  if (!_scope.length) return true;
+  const normalized = normalizeHost(host);
+  if (!normalized) return false;
+  // La lista out-of-scope (headless/onboard) nunca se amplía por wildcard:
+  // domina incluso sobre las entradas del scope.
+  if (_outOfScope.some(rule => matchesRule(normalized, rule))) return false;
+  // Wildcard (*.base): subdominios Y apex; dominio exacto: solo exacto.
+  // Comparación SIN strip de www: 'www.api.other.com' NO cae dentro de una
+  // entrada exacta 'api.other.com' (semántica idéntica a opplan.js).
+  const h = String(host || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split('/')[0].split(':')[0];
   for (const entry of _scope) {
     const e = String(entry).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
     if (!e) continue;
@@ -222,41 +239,13 @@ function inScope(host) {
   }
   return false;
 }
-function isTrustedService(host) {
-  return TRUSTED_SERVICES.has(normalizeHost(host));
-}
-function isPrivateHost(input) {
-  const host = normalizeHost(input);
-  if (!host) return true;
-  if (net.isIP(host) === 4) {
-    const p = host.split('.').map(Number);
-    return p[0] === 0 || p[0] === 10 || p[0] === 127 || (p[0] === 169 && p[1] === 254) ||
-      (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168);
-  }
-  if (net.isIP(host) === 6) return host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:');
-  return /^(localhost|localhost\.local|ip6-localhost|metadata\.google\.internal)$/i.test(host);
-}
-function setScope(scope) { _scope = Array.isArray(scope) ? scope.filter(Boolean) : []; }
-function setOutOfScope(scope) { _outOfScope = Array.isArray(scope) ? scope.filter(Boolean) : []; }
-function matchesRule(host, rule) {
-  const raw = String(rule || '').trim().toLowerCase();
-  const wildcard = raw.startsWith('*.');
-  const base = normalizeHost(wildcard ? raw.slice(2) : raw);
-  return !!base && (wildcard ? host.endsWith(`.${base}`) && host !== base : host === base);
-}
-function inScope(host) {
-  const normalized = normalizeHost(host);
-  if (!normalized || isPrivateHost(normalized) || !_scope.length) return false;
-  if (_outOfScope.some(rule => matchesRule(normalized, rule))) return false;
-  return _scope.some(rule => matchesRule(normalized, rule));
-}
 async function isSafePublicHost(host) {
   const normalized = normalizeHost(host);
-  if (!normalized || isPrivateHost(normalized)) return false;
+  if (!normalized || isInternalHost(normalized)) return false;
   if (net.isIP(normalized)) return true;
   try {
-    const addresses = await dns.lookup(normalized, { all: true, verbatim: true });
-    return addresses.length > 0 && addresses.every(record => !isPrivateHost(record.address));
+    const addresses = await dns.promises.lookup(normalized, { all: true, verbatim: true });
+    return addresses.length > 0 && addresses.every(record => !isInternalHost(record.address));
   } catch { return false; }
 }
 function setEvidenciaDir(dir) { _evidenciaDir = path.resolve(String(dir)); fs.mkdirSync(_evidenciaDir, { recursive: true }); }
@@ -417,7 +406,7 @@ function qs(v) { return encodeURIComponent(v); }
 module.exports = {
   fetch, getJson, getText, normalizeHost, qs,
   setUA, getUA, lockUA, unlockUA, getRateLimit, setRateLimit, setStealth, setMaxBatch, getMaxBatch, waitForSlot, setScope, inScope, hostAllowed,
-  setProxy, getProxy,
+  setProxy, getProxy, isSafePublicHost, setOutOfScope,
   isInternalHost, isInternalIPv4, isInternalIPv6,
   checkPublicIP, getCachedPublicIP,
   setEvidenciaDir, getEvidenciaDir, saveEvidence,
