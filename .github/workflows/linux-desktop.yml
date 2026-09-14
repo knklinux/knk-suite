@@ -1,0 +1,80 @@
+name: Linux desktop build
+
+# Instalador Linux (deb + AppImage) del workbench. Se construye en un runner
+# Ubuntu con las dependencias de Tauri; el bundle lleva backend + frontend +
+# node_modules compilados para Linux (better-sqlite3 y node-pty nativos).
+#
+# Se dispara en pushes que tocan el shell/backend/frontend y manualmente
+# (workflow_dispatch) para regenerar instaladores on-demand.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "src-tauri/**"
+      - "backend/**"
+      - "frontend/src/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/linux-desktop.yml"
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # Rust estable + dependencias del sistema que Tauri exige en Linux
+      # (webkit2gtk-4.1 para Tauri 2, plus librerías de GTK/notify).
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libssl-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libudev-dev libfuse2 file
+
+      - name: Build frontend
+        run: |
+          cd frontend && npm ci && npm run build
+
+      - name: Install backend deps (nativos Linux)
+        run: npm ci
+
+      # El bundle Linux (deb/AppImage) requiere node en la máquina destino
+      # (node_executable cae al "node" del PATH). Para no exigirlo, se embute
+      # el binario oficial de Node en <instalación>/runtime/node — el shell lo
+      # prefiere antes que el del sistema (mismo orden que en Windows).
+      - name: Embed Node runtime
+        run: |
+          NODE_VER=v20.18.1
+          mkdir -p src-tauri/runtime
+          curl -fsSL "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-linux-x64.tar.xz" -o /tmp/node.tar.xz
+          tar -xJf /tmp/node.tar.xz -C /tmp
+          cp "/tmp/node-${NODE_VER}-linux-x64/bin/node" src-tauri/runtime/node
+          chmod +x src-tauri/runtime/node
+          # tauri.conf.json resources: añadir runtime/ (se hace con un patch jq
+          # para no duplicar en cada build)
+          jq '.bundle.resources["../runtime"] = "runtime"' src-tauri/tauri.conf.json > /tmp/conf.json
+          mv /tmp/conf.json src-tauri/tauri.conf.json
+
+      - name: Build Tauri (deb + AppImage)
+        run: |
+          npm run tauri:build -- --bundles deb,appimage
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: knklinux-linux-installer
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
