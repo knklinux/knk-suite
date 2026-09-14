@@ -2,8 +2,13 @@
 
 // ============================================================================
 // KNK SUITE v2.1 — Smoke test del servidor (sin tráfico a objetivos externos)
-// Arranca backend/index.js en un puerto efímero con DB temporal y comprueba
-// las rutas principales. Uso: npm run smoke
+// Arranca backend/index.js en un puerto efímero con DB temporal y comprueba:
+//   1. /api/health es público (200 sin token)
+//   2. Las rutas de API exigen token (401 sin cabecera)
+//   3. Con el token efímero del propio backend responden 200
+// Modelo de auth actual: token SIEMPRE activo (KNK_API_TOKEN o
+// ~/.knk-suite/api-token) vía cookie knk_token o cabecera X-KNK-Token.
+// Uso: npm run smoke
 // ============================================================================
 
 process.env.KNK_DB = `/tmp/knk-smoke-${process.pid}.db`;
@@ -27,39 +32,42 @@ function get(port, url, headers = {}) {
 
 (async () => {
   const { server } = require('./index');
-  // Esperar a que el servidor esté escuchando
   await new Promise(resolve => server.once('listening', resolve));
   const port = server.address().port;
 
-  const checks = [];
-  checks.push(['/api/pipeline/phases', 200]);
-  checks.push(['/api/session', 200]);
-  checks.push(['/api/findings', 200]);
-  checks.push(['/api/status', 200]);
+  // Token efímero que genera/persiste el propio backend (auth.js)
+  const { getToken } = require('./lib/auth');
+  const authHeaders = { 'x-knk-token': getToken() };
 
   let failed = 0;
-  for (const [path, expected] of checks) {
+
+  // 1) /api/health público
+  const health = await get(port, '/api/health');
+  console.log(`${health.status === 200 ? 'PASS' : 'FAIL'} GET /api/health sin token -> ${health.status} (esperado 200)`);
+  if (health.status !== 200) failed++;
+
+  // 2) Auth siempre activa: sin token → 401
+  for (const path of ['/api/pipeline/phases', '/api/session', '/api/findings', '/api/status']) {
     const r = await get(port, path);
-    const ok = r.status === expected;
-    console.log(`${ok ? 'PASS' : 'FAIL'} GET ${path} -> ${r.status} (esperado ${expected})`);
+    const ok = r.status === 401;
+    console.log(`${ok ? 'PASS' : 'FAIL'} GET ${path} sin token -> ${r.status} (esperado 401)`);
     if (!ok) failed++;
   }
 
-  // Comprobación de autenticación cuando hay API key
-  process.env.KNK_API_KEY = 'test-key';
-  delete require.cache[require.resolve('./index')];
-  server.close();
-  const { server: server2 } = require('./index');
-  await new Promise(resolve => server2.once('listening', resolve));
-  const port2 = server2.address().port;
-  const unauth = await get(port2, '/api/findings');
-  const auth = await get(port2, '/api/findings', { 'x-knk-api-key': 'test-key' });
-  console.log(`${unauth.status === 401 ? 'PASS' : 'FAIL'} API key rechaza sin header (${unauth.status})`);
-  console.log(`${auth.status === 200 ? 'PASS' : 'FAIL'} API key acepta con header (${auth.status})`);
-  if (unauth.status !== 401) failed++;
-  if (auth.status !== 200) failed++;
+  // 3) Con token → 200
+  for (const [path, expected] of [
+    ['/api/pipeline/phases', 200],
+    ['/api/session', 200],
+    ['/api/findings', 200],
+    ['/api/status', 200],
+  ]) {
+    const r = await get(port, path, authHeaders);
+    const ok = r.status === expected;
+    console.log(`${ok ? 'PASS' : 'FAIL'} GET ${path} con token -> ${r.status} (esperado ${expected})`);
+    if (!ok) failed++;
+  }
 
-  server2.close();
+  server.close();
   try { fs.unlinkSync(process.env.KNK_DB); } catch {}
 
   console.log(failed === 0 ? 'Smoke server: OK' : `Smoke server: ${failed} fallos`);

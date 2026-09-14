@@ -15,7 +15,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test:tor": "node backend/tor.test.js",
-    "test:modules": "npm run test:cameras && npm run test:tor"
+    "test:modules": "npm run test:cameras && npm run test:tor",
+    "smoke": "node backend/smoke-server.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

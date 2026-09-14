@@ -28,7 +28,11 @@ const HOST = process.env.KNK_HOST || '127.0.0.1';
 app.use(express.json({ limit: '10mb' }));
 app.use(auth.cors);
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
-app.use('/api', auth.requireToken);
+// Auth de API: token SIEMPRE exigido, salvo el healthcheck público.
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next();
+  return auth.requireToken(req, res, next);
+});
 // Cámaras públicas en directo (proxy same-origin de fuentes oficiales abiertas)
 app.use('/api', publicCamerasRouter);
 app.use('/api', router);
