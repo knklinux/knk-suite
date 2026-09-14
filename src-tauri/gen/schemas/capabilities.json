@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Permisos mínimos para las ventanas locales del workbench y su asistente.","remote":{"urls":["http://127.0.0.1:8086/*"]},"local":true,"windows":["main","assistant"],"permissions":["core:default","shell:allow-open"]}}
