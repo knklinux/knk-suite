@@ -3,6 +3,10 @@ import React, { useState, useEffect } from 'react';
 // Indicador permanente de la ruta de SALIDA del tráfico de la suite:
 // directo / Tor / proxy del sistema / proxy externo (Burp). El backend
 // resuelve la prioridad real (la de lib/net.js) en /api/egress.
+//
+// Es CLICABLE: burp → tab Labs (donde se configura el proxy de salida),
+// tor → tab Red Tor. El resto de modos no abren panel (no hay nada que
+// configurar en un estado directo o un proxy que la suite no usa).
 const EGRESS_COLORS = {
   direct: 'var(--green, #35d07f)',
   burp: 'var(--yellow, #ffb454)',
@@ -11,8 +15,9 @@ const EGRESS_COLORS = {
   unknown: 'var(--muted)',
 };
 const EGRESS_ICONS = { direct: '⇢', burp: '⇄', tor: '🧅', system: '⇢', unknown: '?' };
+const EGRESS_TARGET = { burp: 'labs', tor: 'tor' };
 
-function EgressIndicator({ api }) {
+function EgressIndicator({ api, go }) {
   const [egress, setEgress] = useState(null);
 
   useEffect(() => {
@@ -29,26 +34,33 @@ function EgressIndicator({ api }) {
     return <span className="badge" style={{ position: 'absolute', top: 12, right: 118, backdropFilter: 'blur(4px)', color: 'var(--muted)' }}>salida…</span>;
   }
   const color = EGRESS_COLORS[egress.mode] || EGRESS_COLORS.unknown;
+  const target = EGRESS_TARGET[egress.mode];
   const tip = [
     `Ruta de salida: ${egress.label}`,
     egress.detail ? `→ ${egress.detail}` : null,
     egress.mode === 'burp' && egress.burp?.source ? `origen: ${egress.burp.source}` : null,
     egress.mode === 'tor' && egress.tor?.ip ? `exit: ${egress.tor.ip}${egress.tor.country ? ` (${String(egress.tor.country).toUpperCase()})` : ''}` : null,
     egress.note || null,
+    target ? 'clic para abrir el panel' : null,
   ].filter(Boolean).join('  ·  ');
 
-  return (
-    <span
-      className="badge"
-      title={tip}
-      style={{
-        position: 'absolute', top: 12, right: 118, backdropFilter: 'blur(4px)',
-        borderColor: color, color, boxShadow: `0 0 10px ${color}33`,
-      }}
-    >
-      {EGRESS_ICONS[egress.mode] || '?'} salida: {egress.label.toLowerCase()}
-    </span>
-  );
+  const pillStyle = {
+    position: 'absolute', top: 12, right: 118, backdropFilter: 'blur(4px)',
+    borderColor: color, color, boxShadow: `0 0 10px ${color}33`,
+    ...(target ? { cursor: 'pointer' } : {}),
+  };
+
+  if (target && go) {
+    return (
+      <button
+        type="button" className="badge" title={tip} style={pillStyle}
+        onClick={() => go(target)}
+      >
+        {EGRESS_ICONS[egress.mode] || '?'} salida: {egress.label.toLowerCase()}
+      </button>
+    );
+  }
+  return <span className="badge" title={tip} style={pillStyle}>{EGRESS_ICONS[egress.mode] || '?'} salida: {egress.label.toLowerCase()}</span>;
 }
 
 const SEVERITY_COLORS = {
@@ -61,7 +73,7 @@ const SEVERITY_COLORS = {
 
 const SEVERITY_LABELS = { critical: 'Crítico', high: 'Alto', medium: 'Medio', low: 'Bajo', info: 'Info' };
 
-export default function Dashboard({ api }) {
+export default function Dashboard({ api, status, health, go }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -119,7 +131,7 @@ export default function Dashboard({ api }) {
           <h2 style={{ margin: '2px 0 0', textShadow: '0 2px 12px rgba(0,0,0,0.9)' }}>Métricas del workbench</h2>
         </div>
         <span className="badge badge-ok" style={{ position: 'absolute', top: 12, right: 12, backdropFilter: 'blur(4px)' }}>ACTIVO</span>
-        <EgressIndicator api={api} />
+        <EgressIndicator api={api} go={go} />
       </div>
 
       <div className="module-grid" style={{ marginBottom: 16, marginTop: -26, position: 'relative', padding: '0 12px' }}>
