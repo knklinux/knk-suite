@@ -223,9 +223,8 @@ need(P + 'runtime/node.exe', 'node embebido')
 need(P + 'LEEME.txt', 'leeme')
 need(P + 'data/dorks.json', 'recursos de datos (data/)')
 need(P + 'assets/knk-suite.ico', 'iconos (assets/)')
-if (names.some((n) => n.startsWith(P + 'data/data/') || n.startsWith(P + 'assets/assets/'))) {
-  errors.append('recursos ANIDADOS (data/data o assets/assets) — esqueleto mal montado')
-}
+if any(n.startswith(P + 'data/data/') or n.startswith(P + 'assets/assets/') for n in names):
+    errors.append('recursos ANIDADOS (data/data o assets/assets) — esqueleto mal montado')
 src = z.read(P + 'backend/index.js').decode('utf8', 'ignore')
 routes = z.read(P + 'backend/routes.js').decode('utf8', 'ignore')
 if "app.get('/bootstrap'" not in src:
