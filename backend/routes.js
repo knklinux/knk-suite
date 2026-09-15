@@ -37,6 +37,7 @@ const cameraIndex = require('./lib/camera-index');
 const vmLabs = require('./lib/vm-labs');
 const dashboard = require('./lib/dashboard');
 const repeater = require('./lib/repeater');
+const intruder = require('./lib/intruder');
 
 const router = express.Router();
 
@@ -547,6 +548,49 @@ router.delete('/targets/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+
+// ── Intruder (fuzzer pequeño estilo Burp, acoplado al Repeater) ────────────
+// Caps duros server-side; payloads del usuario; cada petición pasa por
+// repeater.sendRaw (scope obligatorio + limiter >=800ms + anti-SSRF).
+router.get('/intruder/config', (req, res) => {
+  res.json({ ok: true, caps: {
+    maxTotalRequests: intruder.MAX_TOTAL_REQUESTS,
+    maxPayloads: intruder.MAX_PAYLOADS,
+    maxConcurrent: intruder.MAX_CONCURRENT,
+    maxRunsConcurrent: intruder.MAX_RUNS_CONCURRENT,
+  } });
+});
+
+router.post('/intruder/start', async (req, res) => {
+  try {
+    const { raw, payloadText, maxRedirects } = req.body || {};
+    const s = getSession();
+    const r = await intruder.startRun(s, { raw, payloadText, maxRedirects });
+    if (!r.ok) return res.status(400).json(r);
+    res.json({ ok: true, run: r.run });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+router.get('/intruder/run/:id', (req, res) => {
+  const s = getSession();
+  const run = intruder.getRun(s.id, req.params.id);
+  if (!run) return res.status(404).json({ ok: false, error: "run no encontrada" });
+  res.json({ ok: true, run });
+});
+
+router.post('/intruder/abort/:id', (req, res) => {
+  const s = getSession();
+  res.json(intruder.abortRun(s.id, req.params.id));
+});
+
+router.post('/intruder/finding/:runId/:index', (req, res) => {
+  try {
+    const s = getSession();
+    const r = intruder.toFinding(s.id, req.params.runId, Number(req.params.index), (req.body || {}).note);
+    if (!r.ok) return res.status(400).json(r);
+    res.json({ ok: true, finding: r.finding });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 // ── Docker Panel ────────────────────────────────────────────────────
 router.get('/docker/containers', async (req, res) => {
   try {
