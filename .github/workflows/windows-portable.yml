@@ -1,0 +1,248 @@
+name: Windows portable build
+
+# ZIP portable de Windows ensamblado automáticamente. Sustituye el build
+# manual en la máquina local (lección de v4.2.0: la release se cortó antes
+# del fix /bootstrap y del Repeater porque se ensamblaba a mano).
+#
+#   * windows job      — construye el shell Tauri (NSIS/MSI), instala los
+#                        node_modules Windows (better-sqlite3 y node-pty
+#                        nativos para win32), embebe el runtime de Node y
+#                        ensambla el ZIP con scripts/build-portable.sh.
+#   * verify-portable  — extrae el ZIP en un runner limpio, arranca el
+#                        backend con el node EMBEBIDO del ZIP (KNK_DB aislado)
+#                        y afirma: /api/health 200 · /bootstrap 200 + cookie
+#                        knk_token · POST /api/targets 200 con id · gate 401.
+#                        Es el boot-test del script, replicado como job CI.
+#
+# La compilación de Rust del shell (~10-14 min) es el precio de tener el
+# instalador reproducible en cada push. on: workflow_dispatch permite
+# regenerarlo on-demand sin push.
+#
+# Al crear una release (tag v*), el ZIP y los instaladores se adjuntan como
+# assets automáticamente (softprops/action-gh-release).
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "src-tauri/**"
+      - "backend/**"
+      - "frontend/src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/build-portable.sh"
+      - ".github/workflows/windows-portable.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # Rust estable para compilar el shell Tauri en el runner
+      - uses: dtolnay/rust-toolchain@stable
+
+      # node-pty y better-sqlite3 compilan binarios nativos win32 con node-gyp
+      - name: Install backend deps (nativos Windows)
+        run: npm ci
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      # El bundle Windows lleva el node embebido (runtime/node.exe) — el shell
+      # lo prefiere antes que cualquier node del sistema. Misma versión que la
+      # build Linux para que ambos portables compartan runtime.
+      - name: Embed Node runtime
+        shell: pwsh
+        run: |
+          $ver = "v22.23.2"
+          New-Item -ItemType Directory -Force -Path runtime | Out-Null
+          Invoke-WebRequest -Uri "https://nodejs.org/dist/$ver/node-$ver-win-x64.zip" -OutFile "$env:RUNNER_TEMP\node.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\node.zip" -DestinationPath "$env:RUNNER_TEMP\node" -Force
+          Copy-Item "$env:RUNNER_TEMP\node\node-$ver-win-x64\node.exe" runtime\node.exe
+          & runtime\node.exe --version
+
+      # Los recursos del bundle debían declararse en tauri.conf.json (el repo
+      # no lleva runtime/ — está gitignored). Se parchea con jq para no
+      # duplicar la entrada en cada build.
+      - name: Patch tauri resources (embed runtime in bundle)
+        shell: pwsh
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if (-not $conf.bundle.resources) { $conf.bundle | Add-Member -NotePropertyName resources -NotePropertyValue @{} }
+          $conf.bundle.resources | Add-Member -NotePropertyName "../runtime" -NotePropertyValue "runtime" -Force
+          $conf | ConvertTo-Json -Depth 20 | Set-Content src-tauri/tauri.conf.json -Encoding utf8
+
+      - name: Build Tauri (NSIS + MSI)
+        run: npm run tauri:build
+
+      # El esqueleto del ZIP (node_modules Windows, runtime, data/, assets/,
+      # config.json) se genera desde cero: el repo no lleva ZIP previo.
+      # En CI no hay $HOME/Desktop — se pasa la ruta explícita del esqueleto.
+      - name: Assemble portable skeleton
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .skeleton/knkLinux-portable/data, .skeleton/knkLinux-portable/assets | Out-Null
+          # node_modules Windows ya compilado (npm ci anterior)
+          Copy-Item -Recurse -Force node_modules .skeleton/knkLinux-portable/node_modules
+          # runtime embebido
+          Copy-Item -Recurse -Force runtime .skeleton/knkLinux-portable/runtime
+          # recursos de datos y assets del repo
+          Copy-Item -Recurse -Force data .skeleton/knkLinux-portable/data
+          Copy-Item -Recurse -Force assets .skeleton/knkLinux-portable/assets
+          # config.json limpio (el repo lo lleva gitignored con claves de
+          # terceros en local — para el bundle se genera uno sin claves)
+          @'
+          {
+            "shodanApiKey": "",
+            "windyApiKey": "",
+            "censysApiId": "",
+            "censysApiSecret": "",
+            "fofaEmail": "",
+            "fofaKey": "",
+            "zoomeyeApiKey": ""
+          }
+          '@ | Set-Content .skeleton/knkLinux-portable/config.json -Encoding utf8
+          # zip del esqueleto con la estructura knkLinux-portable/ raíz
+          Compress-Archive -Path .skeleton/knkLinux-portable -DestinationPath .skeleton/knkLinux-portable.zip
+
+      - name: Assemble portable ZIP (build-portable.sh)
+        shell: bash
+        run: |
+          # el exe del shell ya está tras tauri:build
+          ls -la src-tauri/target/release/knklinux-desktop.exe
+          bash scripts/build-portable.sh .skeleton/knkLinux-portable.zip --prune --boot-test
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: knklinux-windows-portable
+          path: |
+            dist-portable/knkLinux-portable-*.zip
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+  # Verificación independiente en un runner limpio: extrae el ZIP publicado
+  # como artefacto, arranca el backend con el node EMBEBIDO del ZIP y afirma
+  # los 4 endpoints (health, bootstrap+cookie, CRUD targets, gate 401).
+  # Requiere el artefacto de artifacts/, no del esqueleto: replica lo que se
+  # distribuye de verdad.
+  verify-portable:
+    needs: windows
+    runs-on: windows-latest
+    steps:
+      - name: Download portable ZIP artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: knklinux-windows-portable
+          path: dist
+
+      - name: Extract ZIP and boot-test with embedded node
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist/dist-portable/knkLinux-portable-*.zip | Select-Object -First 1
+          if (-not $zip) { throw "no portable ZIP in artifact" }
+          Write-Host "verificando $($zip.Name)"
+          Expand-Archive -Path $zip.FullName -DestinationPath verify -Force
+          $root = Get-ChildItem verify/knkLinux-portable | Select-Object -First 1
+          # layout
+          foreach ($f in @('backend/index.js','backend/routes.js','frontend/dist/index.html','knklinux-desktop.exe','runtime/node.exe','node_modules','data','config.json')) {
+            if (-not (Test-Path "verify/knkLinux-portable/$f")) { throw "falta $f en el ZIP" }
+          }
+          Write-Host "layout OK"
+          # arranque aislado: KNK_PORT libre + KNK_DB temporal (nunca ~/.knk-suite)
+          $port = 18099
+          $db = Join-Path $env:RUNNER_TEMP "verify-suite.db"
+          $proc = Start-Process -FilePath "verify/knkLinux-portable/runtime/node.exe" `
+            -ArgumentList "verify/knkLinux-portable/backend/index.js" `
+            -WorkingDirectory "verify/knkLinux-portable" `
+            -Environment @{ KNK_PORT = "$port"; KNK_DB = $db } `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\backend.log" `
+            -RedirectStandardError "$env:RUNNER_TEMP\backend.err" `
+            -PassThru -WindowStyle Hidden
+          try {
+            # espera a /api/health
+            $up = $false
+            foreach ($i in 1..30) {
+              try {
+                $r = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/health" -UseBasicParsing -TimeoutSec 2
+                if ($r.StatusCode -eq 200) { $up = $true; break }
+              } catch {}
+              if ($proc.HasExited) { break }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $up) { Get-Content "$env:RUNNER_TEMP\backend.err" -ErrorAction SilentlyContinue | Select-Object -First 40; throw "backend no levantó en 30s" }
+            Write-Host "health 200 OK"
+
+            # /bootstrap → 200 + cookie knk_token
+            $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+            $r = Invoke-WebRequest -Uri "http://127.0.0.1:$port/bootstrap" -WebSession $s -UseBasicParsing -TimeoutSec 8
+            if ($r.StatusCode -ne 200) { throw "/bootstrap = $($r.StatusCode)" }
+            if (-not ($s.Cookies.GetCookies("http://127.0.0.1:$port") | Where-Object Name -eq 'knk_token')) {
+              throw "/bootstrap sin Set-Cookie knk_token"
+            }
+            Write-Host "bootstrap 200 + cookie OK"
+
+            # POST /api/targets con cookie → 200 con id
+            $body = '{"name":"ci-portable","scope":[]}'
+            $r = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/targets" -Method POST -Body $body -ContentType 'application/json' -WebSession $s -UseBasicParsing -TimeoutSec 8
+            if ($r.StatusCode -ne 200 -or $r.Content -notmatch '"id"') { throw "POST /api/targets = $($r.StatusCode): $($r.Content)" }
+            Write-Host "targets CRUD 200 OK"
+
+            # gate: sin cookie → 401
+            try {
+              Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/findings" -UseBasicParsing -TimeoutSec 8 | Out-Null
+              throw "/api/findings sin cookie debía dar 401"
+            } catch {
+              $code = $_.Exception.Response.StatusCode.value__
+              if ($code -ne 401) { throw "/api/findings sin cookie = $code (esperado 401)" }
+            }
+            Write-Host "gate 401 OK"
+            Write-Host "PORTABLE-VERIFY-OK"
+          } finally {
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Backend log (on failure)
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Content "$env:RUNNER_TEMP\backend.err" -ErrorAction SilentlyContinue
+          Get-Content "$env:RUNNER_TEMP\backend.log" -ErrorAction SilentlyContinue
+
+  # Adjunta los instaladores al release cuando el push es un tag v*
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, verify-portable]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          # download-artifact con merge-multiple:true preserva las rutas
+          # relativas del upload (desde la raíz del repo)
+          files: |
+            dist/dist-portable/knkLinux-portable-*.zip
+            dist/src-tauri/target/release/bundle/nsis/*-setup.exe
+            dist/src-tauri/target/release/bundle/msi/*.msi
+          fail_on_unmatched_files: true
