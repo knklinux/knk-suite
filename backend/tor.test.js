@@ -271,7 +271,13 @@ async function torrcTests() {
     // Tor usa barras normales aunque sea Windows, así que se compara la forma normalizada.
     const dataDirNormalizado = path.join(tmpDir, 'data').replace(/\\/g, '/');
     assert.ok(dataLine.includes(dataDirNormalizado), 'DataDirectory dentro de KNK_TOR_DIR (' + dataLine + ')');
-    assert.ok(!/^DataDirectory \//m.test(out.content), 'no debe usar rutas tipo Unix sin unidad');
+    // Regla de Windows: Tor allí rompe con rutas estilo Unix sin unidad. En
+    // Linux la ruta nativa ES /absoluta — la regla solo aplica en win32.
+    if (process.platform === 'win32') {
+      assert.ok(!/^DataDirectory \//m.test(out.content), "no debe usar rutas tipo Unix sin unidad");
+    } else {
+      assert.ok(dataLine.startsWith('DataDirectory /'), "en Linux la ruta nativa es /absoluta (" + dataLine + ")");
+    }
     const logLine = out.content.split('\n').find((l) => l.startsWith('Log notice file '));
     assert.ok(logLine && !logLine.includes('"'), 'log sin comillas: ' + logLine);
   });
