@@ -101,14 +101,20 @@ jobs:
       - name: Assemble portable skeleton
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path .skeleton/knkLinux-portable/data, .skeleton/knkLinux-portable/assets | Out-Null
+          New-Item -ItemType Directory -Force -Path .skeleton/knkLinux-portable | Out-Null
           # node_modules Windows ya compilado (npm ci anterior)
           Copy-Item -Recurse -Force node_modules .skeleton/knkLinux-portable/node_modules
           # runtime embebido
           Copy-Item -Recurse -Force runtime .skeleton/knkLinux-portable/runtime
-          # recursos de datos y assets del repo
-          Copy-Item -Recurse -Force data .skeleton/knkLinux-portable/data
-          Copy-Item -Recurse -Force assets .skeleton/knkLinux-portable/assets
+          # recursos de datos y assets: copiar el CONTENIDO (data/* y assets/*).
+          # Copy-Item -Recurse con destino existente anida la carpeta DENTRO
+          # (bug real del tag v4.2.3: data/data/ y assets/assets/ en el ZIP).
+          Copy-Item -Recurse -Force data/* .skeleton/knkLinux-portable/data/
+          Copy-Item -Recurse -Force assets/* .skeleton/knkLinux-portable/assets/
+          # aserciones del esqueleto ANTES de zipear (falla alto y pronto)
+          foreach ($f in @("data/dorks.json", "data/programs.json", "assets/knk-suite.ico", "runtime/node.exe", "node_modules/express")) {
+            if (-not (Test-Path ".skeleton/knkLinux-portable/$f")) { throw "esqueleto incompleto: falta $f (¿anidamiento de Copy-Item?)" }
+          }
           # config.json limpio (el repo lo lleva gitignored con claves de
           # terceros en local — para el bundle se genera uno sin claves)
           @'
