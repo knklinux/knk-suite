@@ -51,6 +51,9 @@ jobs:
 
       # Rust estable para compilar el shell Tauri en el runner
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
       # node-pty y better-sqlite3 compilan binarios nativos win32 con node-gyp
       - name: Install backend deps (nativos Windows)
@@ -167,10 +170,16 @@ jobs:
           # arranque aislado: KNK_PORT libre + KNK_DB temporal (nunca ~/.knk-suite)
           $port = 18099
           $db = Join-Path $env:RUNNER_TEMP "verify-suite.db"
-          $proc = Start-Process -FilePath "verify/knkLinux-portable/runtime/node.exe" `
-            -ArgumentList "verify/knkLinux-portable/backend/index.js" `
-            -WorkingDirectory "verify/knkLinux-portable" `
-            -Environment @{ KNK_PORT = "$port"; KNK_DB = $db } `
+          # rutas ABSOLUTAS: con -WorkingDirectory, un -ArgumentList relativo
+          # se resuelve DOS veces (PowerShell lo antepone al cwd) — bug de la
+          # primera run (MODULE_NOT_FOUND con la ruta duplicada). El entorno
+          # se pasa por herencia de $env: (los hijos lo heredan).
+          $root = (Resolve-Path "verify/knkLinux-portable").Path
+          $env:KNK_PORT = "$port"
+          $env:KNK_DB = $db
+          $proc = Start-Process -FilePath "$root\runtime\node.exe" `
+            -ArgumentList "$root\backend\index.js" `
+            -WorkingDirectory $root `
             -RedirectStandardOutput "$env:RUNNER_TEMP\backend.log" `
             -RedirectStandardError "$env:RUNNER_TEMP\backend.err" `
             -PassThru -WindowStyle Hidden
