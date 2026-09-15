@@ -64,6 +64,13 @@ const SCHEMA = `
     value TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS targets (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    scope TEXT DEFAULT '[]',
+    user_agent TEXT,
+    created_at DATETIME
+  );
   CREATE TABLE IF NOT EXISTS terminal_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER REFERENCES sessions(id),
@@ -172,6 +179,9 @@ const stmts = {
   delMemory: stmtRunner(`DELETE FROM memory WHERE session_id=? AND id=?`),
   insertTerminalLog: stmtRunner(`INSERT INTO terminal_log (session_id, command, output) VALUES (?, ?, ?)`),
   getTerminalLog: stmtAller(`SELECT * FROM terminal_log WHERE session_id = ? ORDER BY id DESC LIMIT 50`),
+  listTargets: stmtAller(`SELECT * FROM targets ORDER BY created_at DESC`),
+  insertTarget: stmtRunner(`INSERT INTO targets (id, name, scope, user_agent, created_at) VALUES (?, ?, ?, ?, ?)`),
+  deleteTarget: stmtRunner(`DELETE FROM targets WHERE id = ?`),
 };
 
 // ── Helper Functions ─────────────────────────────────────────────

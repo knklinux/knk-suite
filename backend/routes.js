@@ -530,20 +530,20 @@ router.delete('/findings', (req, res) => {
 // ── Multi-target (varios objetivos) ──────────────────────────────────
 
 router.get('/targets', (req, res) => {
-  const targets = db.all('SELECT * FROM targets ORDER BY created_at DESC');
+  const targets = db.stmts.listTargets.all();
   res.json(targets || []);
 });
 
 router.post('/targets', (req, res) => {
   const { name, scope: tgtScope, userAgent } = req.body;
-  const id = require('uuid').v4();
-  db.run('INSERT INTO targets (id, name, scope, user_agent, created_at) VALUES (?, ?, ?, ?, ?)',
-    [id, name, JSON.stringify(tgtScope || []), userAgent || '', new Date().toISOString()]);
+  const id = require('node:crypto').randomUUID(); // uuid no estaba en deps: builtin
+  db.stmts.insertTarget.run(id, name, JSON.stringify(tgtScope || []), userAgent || '',
+    new Date().toISOString());
   res.json({ ok: true, id });
 });
 
 router.delete('/targets/:id', (req, res) => {
-  db.run('DELETE FROM targets WHERE id = ?', [req.params.id]);
+  db.stmts.deleteTarget.run(req.params.id);
   res.json({ ok: true });
 });
 

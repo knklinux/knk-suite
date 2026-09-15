@@ -37,3 +37,6 @@ src-tauri/target/
 # claves locales y evidencia con cookies de sesion
 config.json
 evidencia-poc/
+
+# artefactos del build portable (scripts/build-portable.sh)
+dist-portable/
