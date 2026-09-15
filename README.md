@@ -1,7 +1,7 @@
 # KNK Suite — knkLinux Security Workbench
 
 ![CI](https://github.com/knklinux/knk-suite/actions/workflows/ci.yml/badge.svg)
-![version](https://img.shields.io/badge/version-4.2.2-blue)
+![version](https://img.shields.io/badge/version-4.2.3-blue)
 ![node](https://img.shields.io/badge/node-18%2B-green)
 
 **KNK Suite** es una estación de trabajo local de ciberseguridad: pipeline completo
