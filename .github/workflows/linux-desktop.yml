@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -66,7 +66,7 @@ jobs:
       # prefiere antes que el del sistema (mismo orden que en Windows).
       - name: Embed Node runtime
         run: |
-          NODE_VER=v20.18.1
+          NODE_VER=v22.23.2
           # el recurso se declara como "../runtime" (relativo a src-tauri):
           # el binario debe vivir en la RAÍZ del repo, no en src-tauri/
           mkdir -p runtime
