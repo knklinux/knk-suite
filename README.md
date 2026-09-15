@@ -161,6 +161,7 @@ docs/                    Decisiones, auditorías y guías (ver tabla abajo)
 | [HALLAZGOS-CAMARAS-E-INFORME-2026-09-11.md](docs/HALLAZGOS-CAMARAS-E-INFORME-2026-09-11.md) | Objetivos → hallazgos → informe |
 | [BOOTSTRAP-COOKIE-KNK-TOKEN-2026-09-14.md](docs/BOOTSTRAP-COOKIE-KNK-TOKEN-2026-09-14.md) | Autenticación del arranque del escritorio (cookie `knk_token`, primer arranque limpio) |
 | [TOR-2026-09-11.md](docs/TOR-2026-09-11.md) / [INSTALAR-KALI-WSL2.md](docs/INSTALAR-KALI-WSL2.md) | Red Tor / runtime Kali |
+| [TUNNEL-TRYCLOUDFLARE-2026-09-15.md](docs/TUNNEL-TRYCLOUDFLARE-2026-09-15.md) | Ciclo de vida del quick tunnel (URL efímera, DNS, rescate 1.1.1.1) |
 | [bugbounty/](docs/bugbounty/) | Protocolos de operación y re-tests |
 
 ---
