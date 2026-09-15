@@ -24,6 +24,9 @@ name: Windows portable build
 on:
   push:
     branches: [main, master]
+    # los TAGS no pasan el filtro branches ni paths de GitHub Actions:
+    # sin esta clave, el job release nunca se dispararía al marcar v*
+    tags: ["v*"]
     paths:
       - "src-tauri/**"
       - "backend/**"
