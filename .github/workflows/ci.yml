@@ -36,6 +36,11 @@ jobs:
       # pushes hechos desde clones sin `npm install` (sin hooksPath).
       - name: Secret scan (tree)
         run: node ci/secret-check.mjs --all
+      # Backstop de higiene del árbol: la raíz no vuelve a acumular logs de
+      # ejecución ni README.txt (README.md es el canónico). Mismo reparto que
+      # secret-check: hook local preventivo + backstop de CI.
+      - name: Repo hygiene (tree)
+        run: node ci/repo-hygiene.mjs --all
 
   # Segundo escáner independiente: gitleaks con REGLAS DE LA COMUNIDAD y
   # escaneo del HISTORIAL COMPLETO (caza secretos que entraron al repo

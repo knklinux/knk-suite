@@ -1,8 +1,12 @@
 #!/bin/sh
-# pre-commit — guardián de secretos de KNK Suite
-# Bloquea el commit si lo indexado contiene tokens, cookies de sesión,
-# claves API o credenciales embebidas (ci/secret-check.mjs).
+# pre-commit — guardianes de KNK Suite
+# 1. ci/secret-check.mjs: bloquea tokens, cookies de sesión, claves API o
+#    credenciales embebidas en lo indexado.
+# 2. ci/repo-hygiene.mjs: bloquea la vuelta de artefactos a la raíz del
+#    repo (*.log de ejecución, README.txt tras la migración a README.md).
 # Se activa solo vía `git config core.hooksPath .githooks` (lo hace el
 # script "prepare" en package.json).
 
-node "$(git rev-parse --show-toplevel)/ci/secret-check.mjs" --staged
+ROOT="$(git rev-parse --show-toplevel)"
+node "$ROOT/ci/secret-check.mjs" --staged
+node "$ROOT/ci/repo-hygiene.mjs" --staged
