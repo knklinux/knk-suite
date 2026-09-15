@@ -1071,6 +1071,20 @@ function readSystemProxy() {
   return { ProxyEnable: read('ProxyEnable'), ProxyServer: read('ProxyServer'), ProxyOverride: read('ProxyOverride') };
 }
 
+// Estado del proxy del SISTEMA (Windows): habilitado, servidor y si fue KNK
+// quien lo enrutó (existe copia de seguridad) y si apunta a Tor. Sirve al
+// indicador de salida del Dashboard. null en otros SO.
+function getSystemProxyState() {
+  const raw = readSystemProxy();
+  if (!raw) return null;
+  const enabled = /0x1/.test(raw.ProxyEnable || '');
+  const m = raw.ProxyServer && raw.ProxyServer.match(/ProxyServer\s+REG_SZ\s+(\S+)/);
+  const server = m ? m[1] : null;
+  const isTor = Boolean(server && server.includes('socks=') && server.includes('127.0.0.1'));
+  const knkManaged = fs.existsSync(PROXY_BACKUP_PATH);
+  return { enabled, server, isTor, knkManaged };
+}
+
 function routeAllThroughTor() {
   if (!IS_WINDOWS) {
     return { ok: false, error: 'El proxy del sistema solo se configura desde el backend en Windows. En Linux/macOS exporta https_proxy=socks5h://127.0.0.1:9050.' };
@@ -1195,6 +1209,7 @@ module.exports = {
   getCircuitInfo,
   // sistema
   routeAllThroughTor,
+  getSystemProxyState,
   clearSystemProxy,
   // diagnóstico
   getTorLog,

@@ -39,6 +39,7 @@ const dashboard = require('./lib/dashboard');
 const repeater = require('./lib/repeater');
 const intruder = require('./lib/intruder');
 const outproxy = require('./lib/outproxy');
+const egress = require('./lib/egress');
 
 const router = express.Router();
 
@@ -1273,5 +1274,7 @@ router.post('/tor/clear-proxy', (req, res) => {
 
 // ── Proxy de salida (Burp-style): estado / activar / test / quitar ──
 outproxy.mount(router);
+// ── Indicador de salida (directo / Tor / proxy) para el Dashboard ──
+egress.mount(router);
 
 module.exports = { router, getSession };

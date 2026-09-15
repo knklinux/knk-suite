@@ -1,5 +1,56 @@
 import React, { useState, useEffect } from 'react';
 
+// Indicador permanente de la ruta de SALIDA del tráfico de la suite:
+// directo / Tor / proxy del sistema / proxy externo (Burp). El backend
+// resuelve la prioridad real (la de lib/net.js) en /api/egress.
+const EGRESS_COLORS = {
+  direct: 'var(--green, #35d07f)',
+  burp: 'var(--yellow, #ffb454)',
+  tor: 'var(--violet, #b12cff)',
+  system: 'var(--yellow, #ffb454)',
+  unknown: 'var(--muted)',
+};
+const EGRESS_ICONS = { direct: '⇢', burp: '⇄', tor: '🧅', system: '⇢', unknown: '?' };
+
+function EgressIndicator({ api }) {
+  const [egress, setEgress] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => api('/egress')
+      .then((r) => { if (alive && r && r.mode) setEgress(r); })
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 20000);
+    return () => { alive = false; clearInterval(t); };
+  }, [api]);
+
+  if (!egress) {
+    return <span className="badge" style={{ position: 'absolute', top: 12, right: 118, backdropFilter: 'blur(4px)', color: 'var(--muted)' }}>salida…</span>;
+  }
+  const color = EGRESS_COLORS[egress.mode] || EGRESS_COLORS.unknown;
+  const tip = [
+    `Ruta de salida: ${egress.label}`,
+    egress.detail ? `→ ${egress.detail}` : null,
+    egress.mode === 'burp' && egress.burp?.source ? `origen: ${egress.burp.source}` : null,
+    egress.mode === 'tor' && egress.tor?.ip ? `exit: ${egress.tor.ip}${egress.tor.country ? ` (${String(egress.tor.country).toUpperCase()})` : ''}` : null,
+    egress.note || null,
+  ].filter(Boolean).join('  ·  ');
+
+  return (
+    <span
+      className="badge"
+      title={tip}
+      style={{
+        position: 'absolute', top: 12, right: 118, backdropFilter: 'blur(4px)',
+        borderColor: color, color, boxShadow: `0 0 10px ${color}33`,
+      }}
+    >
+      {EGRESS_ICONS[egress.mode] || '?'} salida: {egress.label.toLowerCase()}
+    </span>
+  );
+}
+
 const SEVERITY_COLORS = {
   critical: 'var(--red)',
   high: '#f97316',
@@ -68,6 +119,7 @@ export default function Dashboard({ api }) {
           <h2 style={{ margin: '2px 0 0', textShadow: '0 2px 12px rgba(0,0,0,0.9)' }}>Métricas del workbench</h2>
         </div>
         <span className="badge badge-ok" style={{ position: 'absolute', top: 12, right: 12, backdropFilter: 'blur(4px)' }}>ACTIVO</span>
+        <EgressIndicator api={api} />
       </div>
 
       <div className="module-grid" style={{ marginBottom: 16, marginTop: -26, position: 'relative', padding: '0 12px' }}>
