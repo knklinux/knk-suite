@@ -165,6 +165,25 @@ process.on('SIGTERM', () => process.exit(0));
 // ── Start (async: init DB first) ────────────────────────────────
 (async () => {
   await initDB();
+  // ── Proxy de salida persistido (UI → config.json) ───────────────────────
+  // KNK_PROXY (entorno) tiene prioridad; si no está, se aplica el guardado
+  // desde el tab Labs. En try silencioso: nunca bloquea el arranque.
+  try {
+    if (!process.env.KNK_PROXY) {
+      const { CONFIG_KEY } = require("./lib/outproxy");
+      // OJO: __dirname aquí es backend/ — la config vive en la RAÍZ del repo
+      for (const p of [require("path").join(__dirname, "..", "config.json"), require("path").join(require("os").homedir(), ".knk-suite", "config.json")]) {
+        try {
+          const cfg = JSON.parse(require("fs").readFileSync(p, "utf8").replace(/^﻿/, ""));
+          if (cfg && typeof cfg[CONFIG_KEY] === "string" && cfg[CONFIG_KEY]) {
+            require("./lib/net").setProxy(cfg[CONFIG_KEY]);
+            console.log("[proxy] salida vía " + cfg[CONFIG_KEY] + " (config.json)");
+            break;
+          }
+        } catch {}
+      }
+    }
+  } catch {}
   server.listen(PORT, HOST, () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════════════╗');
