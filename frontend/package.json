@@ -2,6 +2,7 @@
   "name": "knk-suite-frontend",
   "private": true,
   "version": "4.2.1",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

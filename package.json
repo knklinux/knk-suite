@@ -1,6 +1,7 @@
 {
   "name": "knk-suite",
   "version": "4.2.1",
+  "license": "MIT",
   "description": "Bug bounty suite — backend + React frontend + Kali Docker terminal",
   "main": "backend/index.js",
   "scripts": {

@@ -50,6 +50,8 @@
     "targets": ["nsis", "msi", "appimage", "deb"],
     "publisher": "knkLinux",
     "copyright": "knkLinux",
+  "license": "MIT",
+  "licenseFile": "../LICENSE",
     "icon": ["../assets/knklinux.png", "../assets/knklinux.ico"],
     "resources": {
       "../backend": "backend",
