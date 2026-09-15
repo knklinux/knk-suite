@@ -185,6 +185,27 @@ de participación (RoE) y la legislación aplicable es del operador. Los módulo
 de cámaras siguen el mismo principio: fuentes públicas oficiales y tu LAN
 autorizada — nunca dispositivos ajenos. Sin autorización escrita: no ejecutes.
 
+## 📦 Avisos de terceros
+
+KNK Suite es MIT, pero se apoya en software de terceros que conserva sus propias licencias. Las clave (por relevancia y peso en los binarios):
+
+| Dependencia | Uso | Licencia |
+|---|---|---|
+| [React](https://github.com/facebook/react) + ReactDOM | UI del frontend | MIT |
+| [Vite](https://github.com/vitejs/vite) | Build tool | MIT |
+| [Tauri](https://github.com/tauri-apps/tauri) | Shell de escritorio | Apache-2.0 OR MIT |
+| [Express](https://github.com/expressjs/express) | Servidor backend | MIT |
+| [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) | Persistencia local | MIT |
+| [node-pty](https://github.com/microsoft/node-pty) | Terminales reales (Kali/WSL) | MIT |
+| [ws](https://github.com/websockets/ws) | WebSockets | MIT |
+| [hls.js](https://github.com/video-dev/hls.js) | Reproducción HLS de cámaras | Apache-2.0 |
+| [xterm](https://github.com/xtermjs/xterm.js) + addon-fit | Terminal web | MIT |
+| [satellite.js](https://github.com/shashwatak/satellite.js) | Cálculo orbital | MIT |
+| [sql.js](https://github.com/sql-js/sql.js) | SQLite WASM | MIT |
+| [whisper-node](https://github.com/petewarden/whisper-node) | Transcripción local | MIT |
+
+Licencia completa de cada paquete en su `node_modules/<pkg>/LICENSE`; el runtime de WebView2/Edge (Microsoft) se rige por sus propios términos.
+
 ## 📄 Licencia
 
 [MIT](LICENSE) — uso educativo y de investigación responsable. Consulta el fichero [LICENSE](LICENSE) para el texto completo.
