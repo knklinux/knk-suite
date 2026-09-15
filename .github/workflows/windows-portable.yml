@@ -106,6 +106,7 @@ jobs:
           Copy-Item -Recurse -Force node_modules .skeleton/knkLinux-portable/node_modules
           # runtime embebido
           Copy-Item -Recurse -Force runtime .skeleton/knkLinux-portable/runtime
+          New-Item -ItemType Directory -Force -Path .skeleton/knkLinux-portable/data, .skeleton/knkLinux-portable/assets | Out-Null
           # recursos de datos y assets: copiar el CONTENIDO (data/* y assets/*).
           # Copy-Item -Recurse con destino existente anida la carpeta DENTRO
           # (bug real del tag v4.2.3: data/data/ y assets/assets/ en el ZIP).
