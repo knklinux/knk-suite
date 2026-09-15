@@ -130,7 +130,7 @@ function outOfScopeHost(host, entries) {
 /** Convierte un envío en hallazgo de la misión */
 function toFinding(sessionId, send, note) {
   const summary = note || `[Repeater] ${send.method} ${send.url} → ${send.status}`;
-  return db.addFinding(sessionId, 'REPEATER', summary, 'info', {
+  const result = db.addFinding(sessionId, 'REPEATER', summary, 'info', {
     url: send.url,
     method: send.method,
     status: send.status,
@@ -140,6 +140,8 @@ function toFinding(sessionId, send, note) {
     diff: send.diff || null,
     capturedAt: send.ts,
   });
+  // id real para la UI (sql.js devuelve {lastInsertRowid, changes})
+  return { ok: true, finding: { id: (result && result.lastInsertRowid) || null, summary } };
 }
 
 /**
