@@ -1,6 +1,6 @@
 {
   "name": "knk-suite",
-  "version": "4.2.1",
+  "version": "4.2.2",
   "license": "MIT",
   "author": "knkLinux",
   "description": "Bug bounty suite — backend + React frontend + Kali Docker terminal",
@@ -12,7 +12,6 @@
     "setup": "cd frontend && npm install && cd .. && npm install",
     "test": "node backend/test.js",
     "test:cameras": "node backend/camera-index.test.js && node backend/camera-audit.test.js && node backend/public-webcams.test.js && node backend/lan-relay.test.js && node backend/exposed-cameras.test.js && node backend/camera-findings.test.js && node backend/hls-proxy-audit.test.js",
-    "lab:revocation": "node backend/local-revocation-lab.js",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

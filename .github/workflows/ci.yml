@@ -28,6 +28,11 @@ jobs:
         run: cd frontend && npm ci
       - name: Run unit/smoke tests
         run: npm test
+      # Módulos (cámaras x8, tor, auth-gate, intruder): el CI solo ejecutaba
+      # backend/test.js — todo esto corría solo en local y los bugs de módulos
+      # no rompían el push (lección de la sesión del 15-sep).
+      - name: Run module tests
+        run: npm run test:modules
       - name: Build frontend
         run: npm run build
       - name: Server smoke test

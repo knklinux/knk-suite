@@ -2,7 +2,7 @@
 
 ## ⚠️ Tu IP actual está expuesta
 ```
-IP pública: 90.173.225.104
+IP pública: (tu-IP-aqui — compruébala con: curl -s https://api.ipify.org)
 ```
 Esto significa que cada petición que haces a un target puede ser rastreada hasta tu router/doméstica.
 
