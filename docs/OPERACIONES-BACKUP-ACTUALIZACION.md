@@ -50,11 +50,12 @@ Regla: si la UAT falla tras una actualización, se revierte antes de seguir desa
 6. Descarga modelos: `ollama pull hermes3` (+ el coder que uses).
 7. Verifica con `node backend/test-uat.js`.
 
-## Instalador Windows (pendiente)
+## Instalador Windows
 
-El paso definitivo es `electron-builder` para generar `.exe` instalador con icono,
-acceso directo y desinstalador. Estado: preparado para hacerlo sobre `desktop/`
-(cuando se apruebe, añadir `build` config + script `dist`).
+Resuelto con **Tauri 2** (`src-tauri/`): `npm run tauri:build` genera NSIS y MSI
+(además del ZIP portable vía `scripts/build-portable.sh`). El antiguo shell de
+Electron (`desktop/`) se retiró el 2026-09-15; su código queda archivado en
+`docs/historical/electron-shell/`.
 
 ## Salud y monitorización
 

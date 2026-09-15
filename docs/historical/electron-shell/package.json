@@ -1,0 +1,76 @@
+{
+  "name": "knklinux-desktop",
+  "productName": "knkLinux Security Workbench",
+  "version": "3.0.0",
+  "description": "knkLinux — Security Workbench Desktop",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "dist": "electron-builder --win --publish never",
+    "dist:dir": "electron-builder --dir --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.knklinux.securityworkbench",
+    "productName": "knkLinux Security Workbench",
+    "artifactName": "knkLinux-Setup-${version}.${ext}",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend"
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      },
+      {
+        "from": "../assets",
+        "to": "assets"
+      },
+      {
+        "from": "../data",
+        "to": "data"
+      },
+      {
+        "from": "../vault-knklinux",
+        "to": "vault-knklinux"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "../assets/knklinux.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "knkLinux Security Workbench",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
