@@ -156,12 +156,12 @@ docs/                    Decisiones, auditorías y guías (ver tabla abajo)
 ### Documentación destacada (`docs/`)
 | Doc | Contenido |
 |---|---|
-| `GUIA-USUARIO-KNKLINUX.md` | Guía de usuario del workbench |
-| `CAMARAS-PUBLICAS-2026-09-11.md` / `CAMARAS-EXPUESTAS-Y-FILTROS-2026-09-11.md` | Módulos de cámaras |
-| `HALLAZGOS-CAMARAS-E-INFORME-2026-09-11.md` | Objetivos → hallazgos → informe |
-| `BOOTSTRAP-COOKIE-KNK-TOKEN-2026-09-14.md` | Autenticación del arranque del escritorio |
-| `TOR-2026-09-11.md` / `INSTALAR-KALI-WSL2.md` | Red Tor / runtime Kali |
-| `bugbounty/` | Protocolos de operación y re-tests |
+| [GUIA-USUARIO-KNKLINUX.md](docs/GUIA-USUARIO-KNKLINUX.md) | Guía de usuario del workbench |
+| [CAMARAS-PUBLICAS-2026-09-11.md](docs/CAMARAS-PUBLICAS-2026-09-11.md) / [CAMARAS-EXPUESTAS-Y-FILTROS-2026-09-11.md](docs/CAMARAS-EXPUESTAS-Y-FILTROS-2026-09-11.md) | Módulos de cámaras |
+| [HALLAZGOS-CAMARAS-E-INFORME-2026-09-11.md](docs/HALLAZGOS-CAMARAS-E-INFORME-2026-09-11.md) | Objetivos → hallazgos → informe |
+| [BOOTSTRAP-COOKIE-KNK-TOKEN-2026-09-14.md](docs/BOOTSTRAP-COOKIE-KNK-TOKEN-2026-09-14.md) | Autenticación del arranque del escritorio (cookie `knk_token`, primer arranque limpio) |
+| [TOR-2026-09-11.md](docs/TOR-2026-09-11.md) / [INSTALAR-KALI-WSL2.md](docs/INSTALAR-KALI-WSL2.md) | Red Tor / runtime Kali |
+| [bugbounty/](docs/bugbounty/) | Protocolos de operación y re-tests |
 
 ---
 
