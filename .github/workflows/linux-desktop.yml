@@ -4,6 +4,15 @@ name: Linux desktop build
 # Ubuntu con las dependencias de Tauri; el bundle lleva backend + frontend +
 # node_modules compilados para Linux (better-sqlite3 y node-pty nativos).
 #
+# El job `smoke-deb` instala el .deb resultante en un contenedor ubuntu:22.04
+# real (apt resuelve los Depends: webkit2gtk, GTK, appindicator), comprueba el
+# layout instalado, arranca el backend INSTALADO con el node EMBEBIDO
+# (runtime/node) y afirma:
+#   * GET /api/health        → 200 (público)
+#   * GET /bootstrap         → 200 + Set-Cookie: knk_token=…
+#   * POST /api/targets      → 200 con cookie (regresión del CRUD multi-target)
+#   * GET /api/findings      → 401 sin cookie (gate de auth)
+#
 # Se dispara en pushes que tocan el shell/backend/frontend y manualmente
 # (workflow_dispatch) para regenerar instaladores on-demand.
 
@@ -83,3 +92,88 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
+
+  # Smoke del .deb en Ubuntu real: instala el paquete (apt resuelve los Depends
+  # del control), valida el layout y lanza el backend instalado con el node
+  # embebido para afirmar /api/health, /bootstrap (+cookie knk_token), el CRUD
+  # de /api/targets autenticado y el gate 401 sin cookie.
+  smoke-deb:
+    needs: linux
+    runs-on: ubuntu-22.04
+    container:
+      image: ubuntu:22.04
+      env:
+        DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: knklinux-linux-installer
+          path: dist
+
+      - name: Install the .deb (apt resolves Depends)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends curl ./dist/deb/*.deb
+
+      - name: Assert installed layout
+        run: |
+          set -e
+          test -x /usr/bin/knklinux-desktop
+          APP="/usr/lib/knkLinux Security Workbench"
+          test -f "$APP/backend/index.js"
+          test -f "$APP/backend/routes.js"
+          test -f "$APP/frontend/dist/index.html"
+          test -x "$APP/runtime/node"
+          test -d "$APP/node_modules"
+          test -d "$APP/data"
+          echo "layout OK en $APP"
+
+      - name: Launch installed backend and assert endpoints
+        run: |
+          set -e
+          APP="/usr/lib/knkLinux Security Workbench"
+          KNK_PORT=8099 KNK_DB=/tmp/smoke-suite.db \
+            "$APP/runtime/node" "$APP/backend/index.js" > /tmp/backend.log 2>&1 &
+          BPID=$!
+
+          # espera a que /api/health conteste (máx 30s)
+          up=0
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8099/api/health; then up=1; break; fi
+            if ! kill -0 $BPID 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ "$up" != 1 ]; then
+            echo "::error::el backend instalado no levantó en 30s"
+            tail -40 /tmp/backend.log
+            exit 1
+          fi
+
+          # 1) /api/health público → 200
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/health)
+          [ "$code" = 200 ] || { echo "::error::/api/health = $code (esperado 200)"; exit 1; }
+          echo "health 200 OK"
+
+          # 2) /bootstrap → 200 + Set-Cookie knk_token
+          curl -s -o /dev/null -D /tmp/hdr -c /tmp/jar http://127.0.0.1:8099/bootstrap
+          grep -i '^set-cookie: knk_token=' /tmp/hdr > /dev/null \
+            || { echo "::error::/bootstrap sin Set-Cookie knk_token"; head -20 /tmp/hdr; exit 1; }
+          echo "bootstrap 200 + cookie OK"
+
+          # 3) autenticado con la cookie: CRUD de targets (regresión uuid/db)
+          code=$(curl -s -b /tmp/jar -o /tmp/targets.json -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' \
+            -d '{"name":"ci-smoke","scope":[]}' http://127.0.0.1:8099/api/targets)
+          [ "$code" = 200 ] || { echo "::error::POST /api/targets = $code"; cat /tmp/targets.json; exit 1; }
+          grep -q '"id"' /tmp/targets.json || { echo "::error::POST /api/targets sin id"; cat /tmp/targets.json; exit 1; }
+          echo "targets CRUD 200 OK"
+
+          # 4) gate: sin cookie → 401
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/findings)
+          [ "$code" = 401 ] || { echo "::error::/api/findings sin cookie = $code (esperado 401)"; exit 1; }
+          echo "gate 401 OK"
+
+      - name: Backend log (on failure)
+        if: failure()
+        run: tail -60 /tmp/backend.log || true
