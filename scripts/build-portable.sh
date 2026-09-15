@@ -99,10 +99,11 @@ TMPD=$(mktemp -d "${TMPDIR:-/tmp}/knk-portable-build.XXXXXX")
 trap 'rm -rf "$TMPD"' EXIT
 
 cat > "$TMPD/build.py" <<'PYEOF'
-import os, sys, time, zipfile, hashlib
+import os, sys, re, time, zipfile, hashlib
 
 REPO, SKELETON, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 ROOT, PRUNE, = sys.argv[4], sys.argv[5] == '1'
+VERSION = sys.argv[6]
 P = ROOT + '/'
 
 # Prune determinista: solo se descarta lo que existe en esta lista, y la
@@ -181,6 +182,7 @@ try:
             continue
 except Exception:
     pass
+leeme = re.sub(r'\*\*v[0-9.]+\*\*', '**v%s**' % VERSION, leeme, count=1)
 if len(leeme) < 200:
     leeme = '# knkLinux Security Workbench — Edición Portable\n'
 extra = ('## Novedades del build\n\n'
@@ -247,7 +249,7 @@ PYEOF
 mkdir -p dist-portable
 
 echo "== 1) ensamblando =="
-python "$TMPD/build.py" "$REPO" "$SKELETON" "$OUT" "$ROOT" "$PRUNE" || exit 1
+python "$TMPD/build.py" "$REPO" "$SKELETON" "$OUT" "$ROOT" "$PRUNE" "$VERSION" || exit 1
 
 echo "== 2) verificando integridad y marcadores =="
 python "$TMPD/verify.py" "$OUT" "$ROOT" "$BUNDLE" || exit 1
