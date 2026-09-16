@@ -1074,15 +1074,25 @@ function readSystemProxy() {
 // Estado del proxy del SISTEMA (Windows): habilitado, servidor y si fue KNK
 // quien lo enrutó (existe copia de seguridad) y si apunta a Tor. Sirve al
 // indicador de salida del Dashboard. null en otros SO.
-function getSystemProxyState() {
-  const raw = readSystemProxy();
+// Interpreta la salida cruda de `reg query` (o un fixture con la misma forma).
+// Separada de getSystemProxyState para poder testearla sin registro.
+function parseSystemProxy(raw) {
   if (!raw) return null;
   const enabled = /0x1/.test(raw.ProxyEnable || '');
   const m = raw.ProxyServer && raw.ProxyServer.match(/ProxyServer\s+REG_SZ\s+(\S+)/);
-  const server = m ? m[1] : null;
-  const isTor = Boolean(server && server.includes('socks=') && server.includes('127.0.0.1'));
-  const knkManaged = fs.existsSync(PROXY_BACKUP_PATH);
-  return { enabled, server, isTor, knkManaged };
+  const server = m ? m[1] : undefined;
+  if (!enabled) return null;
+  return {
+    enabled: true,
+    server: server === undefined ? null : server,
+    isTor: Boolean(server && server.includes('socks=') && server.includes('127.0.0.1')),
+  };
+}
+
+function getSystemProxyState() {
+  const state = parseSystemProxy(readSystemProxy());
+  if (!state) return null;
+  return { ...state, knkManaged: fs.existsSync(PROXY_BACKUP_PATH) };
 }
 
 function routeAllThroughTor() {
@@ -1178,6 +1188,7 @@ function resetForTests() {
 }
 
 module.exports = {
+  parseSystemProxy,
   // rutas de trabajo y puertos
   TOR_DIR, TORRC_PATH, TOR_DATA_DIR, TOR_LOG_PATH, BUNDLE_DIR,
   DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT, EXTERNAL_PORT_PAIRS,

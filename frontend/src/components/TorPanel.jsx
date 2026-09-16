@@ -50,6 +50,7 @@ export default function TorPanel({ api }) {
   const [busy, setBusy] = useState({});
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [sysProxy, setSysProxy] = useState(null);
   const logRef = useRef(null);
   const firstIpRef = useRef(null);
 
@@ -79,6 +80,13 @@ export default function TorPanel({ api }) {
     } catch { /* el log no es crítico */ }
   }, [api]);
 
+  const refreshSysProxy = useCallback(async () => {
+    try {
+      const res = await api('/tor/system-proxy');
+      setSysProxy(res?.state || null);
+    } catch { /* el aviso no es crítico */ }
+  }, [api]);
+
   const refreshCircuits = useCallback(async () => {
     try {
       const res = await api('/tor/circuits');
@@ -89,8 +97,10 @@ export default function TorPanel({ api }) {
   useEffect(() => {
     refreshStatus().then(refreshLog).then(refreshCircuits);
     const timer = setInterval(() => { refreshStatus(); refreshLog(); }, 5000);
-    return () => clearInterval(timer);
-  }, [refreshStatus, refreshLog, refreshCircuits]);
+    refreshSysProxy();
+    const timer2 = setInterval(refreshSysProxy, 5000);
+    return () => { clearInterval(timer); clearInterval(timer2); };
+  }, [refreshStatus, refreshLog, refreshCircuits, refreshSysProxy]);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -212,6 +222,23 @@ export default function TorPanel({ api }) {
           {status.note && !error && (
             <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'monospace', marginTop: 4 }}>{status.note}</div>
           )}
+        </div>
+      )}
+
+      {sysProxy && !sysProxy.isTor && (
+        <div className="card" style={{ marginBottom: 12, borderColor: 'rgba(255,199,0,0.4)', background: 'rgba(255,199,0,0.06)' }}>
+          <div style={{ fontSize: 12, color: 'var(--yellow)', fontWeight: 700, fontFamily: 'monospace', marginBottom: 4 }}>
+            ⚠️ Proxy del sistema en manos de otro programa
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'monospace', marginBottom: 6 }}>
+            Otro programa (o tú, fuera de la suite) dejó el proxy de Windows apuntando a{' '}
+            <b style={{ color: 'var(--text)' }}>{sysProxy.server || '(sin servidor)'}</b>. La suite NO lo usa para
+            su tráfico, pero los navegadores y otras apps sí: revísalo antes de enrutar todo por Tor.
+          </div>
+          <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'monospace' }}>
+            El indicador de salida del Dashboard lo refleja como «proxy del sistema». Si lo quitas con
+            «✕ Quitar proxy del sistema» se desactiva sin copia de seguridad (KNK no lo puso).
+          </div>
         </div>
       )}
 

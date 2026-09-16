@@ -1264,6 +1264,16 @@ router.get('/tor/log', (req, res) => {
   catch (e) { torError(res, e); }
 });
 
+// Estado del proxy del SISTEMA para el aviso del panel: si otro programa
+// (o el propio usuario) ha puesto un proxy a nivel de Windows, el operador
+// debe saberlo antes de enrutar todo por Tor.
+router.get('/tor/system-proxy', (req, res) => {
+  try {
+    const state = tor.getSystemProxyState();
+    res.json({ ok: true, available: state !== null, state });
+  } catch (e) { torError(res, e); }
+});
+
 router.post('/tor/route-all', (req, res) => {
   try { res.json(tor.routeAllThroughTor()); } catch (e) { torError(res, e); }
 });
