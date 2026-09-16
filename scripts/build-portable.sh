@@ -184,7 +184,12 @@ except Exception:
     pass
 leeme = re.sub(r'\*\*v[0-9.]+\*\*', '**v%s**' % VERSION, leeme, count=1)
 if len(leeme) < 200:
-    leeme = '# knkLinux Security Workbench — Edición Portable\n'
+    # fallback: plantilla canónica del repo (scripts/LEEME-portable.txt)
+    try:
+        tpl = open(os.path.join(REPO, 'scripts', 'LEEME-portable.txt'), encoding='utf-8').read()
+        leeme = tpl.replace('{{VERSION}}', VERSION)
+    except Exception:
+        leeme = '# knkLinux Security Workbench — Edición Portable' + chr(10)
 extra = ('## Novedades del build\n\n'
          '- Regenerado con `scripts/build-portable.sh` desde master: backend y UI frescos.\n'
          + ('- node_modules podado (--prune): sin toolchains de build ni deps de dev.\n' if PRUNE else '')
