@@ -1,0 +1,99 @@
+# knkLinux Security Workbench — Edición Portable
+
+**v{{VERSION}}** · Sin instalación. Lleva su propio Node.js (`runtime/node.exe` v24.19.0):
+**no necesitas nada preinstalado** en la máquina.
+
+## Arranque
+
+Ejecuta `knklinux-desktop.exe`. El backend (Node) arranca en `127.0.0.1:8086`
+usando el runtime embebido de la carpeta `runtime/` — si la máquina tiene Node
+propio, este portable sigue priorizando el suyo... no: **el embebido tiene
+prioridad** (así la versión es siempre la probada). Para forzar otro Node:
+variable de entorno `KNK_NODE_EXE=<ruta>`.
+
+## Qué incluye
+
+| Carpeta | Contenido |
+|---|---|
+| `knklinux-desktop.exe` | Shell de escritorio (Tauri 2) con watchdog de procesos |
+| `runtime/node.exe` | Node.js v24.19.0 embebido (no toca el del sistema) |
+| `backend/` | Servidor Express + SQLite + todos los módulos (cámaras, Tor, pipeline…) |
+| `frontend/` | UI compilada (React) que sirve el backend |
+| `node_modules/` | Dependencias del backend (incl. better-sqlite3 precompilado) |
+| `data/` | Datos curados de programas candidatos |
+| `vault-knklinux/` | Bóveda (estructura; tus notas vivrán en `~/.knk-suite`) |
+| `assets/` | Iconos y recursos |
+
+## Novedades vs el portable publicado inicialmente
+
+- **Fix /bootstrap**: el primer arranque en una máquina limpia renderiza
+  a la primera (antes podía quedar pantalla en blanco).
+- **Módulo Repeater**: pestaña 🔁 para enviar peticiones HTTP crudas,
+  manualmente, dentro del scope — el gate, el limiter y el anti-SSRF se
+  aplican solos.
+
+---
+
+## Datos de usuario
+
+Todo el estado vivo (sesión, hallazgos, evidencia, token de API, bóveda real)
+vive en `%USERPROFILE%\.knk-suite\` — fuera de esta carpeta. Borrar el
+portable no borra tus datos; copiar esta carpeta a otra máquina empieza
+limpio (el token se genera en el primer arranque).
+
+## Requisitos
+
+- Windows 10/11 x64 (usa WebView2, incluido en Windows 11 y casi todos los Win10 actualizados)
+- **Nada más**: ni Node, ni Python, ni Docker.
+- Opcional: Ollama (mentor LLM local), Kali en WSL2/VirtualBox/Docker (terminal), Tor.
+
+## Solución de problemas
+
+**«El puerto 8086 está ocupado» / la ventana abre pero no carga**
+
+Otra aplicación (u otra copia del workbench) ya usa el 8086. Cierra las
+otras copias; si no sabes qué lo ocupa:
+
+    netstat -ano | findstr :8086
+    taskkill /PID <pid> /F      (solo si reconoces el proceso)
+
+El log del backend queda en `backend.log`, junto al exe (y el del watchdog
+en `backend-watchdog.log`). El barrido de huérfanos del arranque ya limpia
+los node muertos de sesiones anteriores; esto es para una app ajena.
+
+**Pantalla en blanco o error de WebView2 antiguo**
+
+El shell usa el **WebView2 Runtime** de Microsoft (incluido en Windows 11
+y en casi todos los Win10 actualizados). Si falta o es muy antiguo,
+instala el Evergreen Runtime:
+
+    https://developer.microsoft.com/microsoft-edge/webview2/
+    (o: winget install Microsoft.EdgeWebView2Runtime)
+
+Es el runtime, no el navegador Edge: instalarlo no cambia tu navegador
+ni sus ajustes. Tras instalarlo, vuelve a ejecutar el exe.
+
+**Windows SmartScreen bloquea el exe («Windows protegió tu PC»)**
+
+El binario no lleva certificado de firma de código y los ficheros
+descargados de internet traen la marca MotW. Opciones:
+
+- Verifica el SHA-256 contra las notas de la release y ejecuta de todas
+  formas: «Más información» → «Ejecutar de todas formas».
+- O desbloquea el ZIP antes de extraer: clic derecho → Propiedades →
+  «Desbloquear» → Aplicar (equivalente a
+  `Unblock-File .\knkLinux-portable-4.2.0-win64.zip` en PowerShell);
+  todo lo que extraigas después sale sin la marca.
+
+## Seguridad
+
+- El backend solo escucha en `127.0.0.1` y exige token para todo salvo `/health`.
+- Las claves de servicios (Windy, Shodan…) van en `config.json` — este portable
+  las trae **vacías**; rellénalas solo si las necesitas.
+- `data/` fue saneado para distribución: sin misiones personales.
+- Detalles de seguridad: `docs/BOOTSTRAP-COOKIE-KNK-TOKEN-2026-09-14.md` (en el repo).
+
+## Nota legal
+
+Solo para uso contra objetivos autorizados (bug bounty, pentest con permiso,
+laboratorio propio). Ver Aviso legal en el README del repositorio.
