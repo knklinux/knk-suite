@@ -31,6 +31,7 @@ import TeamPanel from './components/TeamPanel';
 import PluginsPanel from './components/PluginsPanel';
 import OfflineCachePanel from './components/OfflineCachePanel';
 import TorPanel from './components/TorPanel';
+import OastPanel from './components/OastPanel';
 import CameraSources from './components/CameraSources';
 import LiveCams from './components/LiveCams';
 import { backendStatus, openAssistantWindow } from './desktop-api';
@@ -126,6 +127,7 @@ export default function App() {
     tor: <TorPanel api={api} />,
     'camera-sources': <CameraSources api={api} />,
     live: <LiveCams api={api} />,
+    oast: <OastPanel api={api} />,
   };
 
   const icons = {
@@ -134,7 +136,7 @@ export default function App() {
     assistant: '🤖', chat: '💬', vault: '📚', revocation: '🔁', osint: '🌐', cameras: '🎥',
     liligo: '⚡', labs: '🧪',
     tools: '🔧', 'report-export': '📄', nuclei: '🛡️', clipboard: '📋', alerts: '🔔',
-    'liligo-real': '🔌', 'pipe-engine': '⚙️', team: '👥', plugins: '🧩', cache: '💾', tor: '🧅', 'camera-sources': '📡', live: '🔴',
+    'liligo-real': '🔌', 'pipe-engine': '⚙️', team: '👥', plugins: '🧩', cache: '💾', tor: '🧅', 'camera-sources': '📡', live: '🔴', oast: '📡',
   };
   const labels = {
     dashboard: 'Panel', targets: 'Targets', opplan: 'OPPLAN', pipeline: 'Pipeline', jobs: 'Trabajos',
@@ -143,12 +145,12 @@ export default function App() {
     revocation: 'Revocación A/B', osint: 'OSINT Hub', cameras: 'Cámaras Públicas', liligo: 'LILIGO ESP32', labs: 'Laboratorios VM',
     tools: 'Instalar Tools', 'report-export': 'Exportar Reportes', nuclei: 'Nuclei Scanner',
     clipboard: 'Clipboard', alerts: 'Alertas',     'liligo-real': 'LILIGO Serial',
-    'pipe-engine': 'Pipeline Engine', team: 'Equipo', plugins: 'Plugins', cache: 'Cache Offline', tor: 'Red Tor', 'camera-sources': 'Fuentes Cámaras', live: 'En Directo',
+    'pipe-engine': 'Pipeline Engine', team: 'Equipo', plugins: 'Plugins', cache: 'Cache Offline', tor: 'Red Tor', 'camera-sources': 'Fuentes Cámaras', live: 'En Directo', oast: 'OAST',
   };
   const groups = [
     ['OPERACIÓN', ['dashboard', 'targets', 'opplan', 'pipeline', 'jobs']],
     ['EJECUCIÓN', ['terminal', 'gates', 'revocation', 'nuclei', 'pipe-engine']],
-    ['INTELIGENCIA', ['assistant', 'chat', 'vault', 'osint', 'cameras', 'live', 'camera-sources', 'liligo', 'liligo-real']],
+    ['INTELIGENCIA', ['assistant', 'chat', 'vault', 'osint', 'cameras', 'live', 'camera-sources', 'liligo', 'liligo-real', 'oast']],
     ['HERRAMIENTAS', ['tools', 'clipboard', 'alerts', 'cache', 'plugins', 'team', 'tor']],
     ['LABORATORIO', ['labs']],
     ['SALIDA', ['reportes', 'report-export', 'compliance', 'cheatsheet']],

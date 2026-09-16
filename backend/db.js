@@ -164,6 +164,7 @@ const stmts = {
     WHERE id=?
   `),
   insertFinding: stmtRunner(`INSERT INTO findings (session_id, type, summary, severity, details) VALUES (?, ?, ?, ?, ?)`),
+  updateFindingDetails: stmtRunner(`UPDATE findings SET details = ? WHERE session_id = ? AND id = ?`),
   getFindings: stmtAller(`SELECT * FROM findings WHERE session_id = ? ORDER BY id DESC`),
   getFinding: stmtGetter(`SELECT * FROM findings WHERE session_id = ? AND id = ?`),
   deleteFindings: stmtRunner(`DELETE FROM findings WHERE session_id = ?`),
@@ -222,6 +223,11 @@ function saveSession(id, data) {
 
 function addFinding(sessionId, type, summary, severity = 'info', details = {}) {
   return stmts.insertFinding.run(sessionId, type, summary, severity, JSON.stringify(details));
+}
+
+/** Actualiza solo los details de un hallazgo (acumular interacciones OAST). */
+function updateFindingDetails(sessionId, id, details) {
+  return stmts.updateFindingDetails.run(JSON.stringify(details || {}), sessionId, id);
 }
 
 function getFindings(sessionId) {
@@ -314,6 +320,7 @@ module.exports = {
   getOrCreateSession,
   saveSession,
   addFinding,
+  updateFindingDetails,
   getFindings,
   getFinding,
   removeFinding,

@@ -39,6 +39,7 @@ const dashboard = require('./lib/dashboard');
 const repeater = require('./lib/repeater');
 const intruder = require('./lib/intruder');
 const outproxy = require('./lib/outproxy');
+const oastRouter = require('./lib/oast-router');
 const egress = require('./lib/egress');
 
 const router = express.Router();
@@ -1286,5 +1287,7 @@ router.post('/tor/clear-proxy', (req, res) => {
 outproxy.mount(router);
 // ── Indicador de salida (directo / Tor / proxy) para el Dashboard ──
 egress.mount(router);
+// ── OAST (interactsh): payloads OOB, callbacks y hallazgos ──
+oastRouter.mount(router, { getSession });
 
 module.exports = { router, getSession };
