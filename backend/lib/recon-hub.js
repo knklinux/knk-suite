@@ -714,37 +714,62 @@ function validDomain(d) {
 async function crtshSubs(domain) {
   const d = String(domain || '').trim().toLowerCase();
   if (!validDomain(d)) return { ok: false, error: 'Dominio inválido', domain };
+  const set = new Set();
+  const fuentes = [];
+  // 1) crt.sh (cuando está vivo es el mejor)
   try {
     const resp = await fetch(`https://crt.sh/?q=%25.${encodeURIComponent(d)}&output=json`, { timeout: 20000 });
-    if (resp.status !== 200) return { ok: false, error: `crt.sh respondió ${resp.status}`, domain: d };
-    const rows = JSON.parse(resp.body);
-    if (!Array.isArray(rows)) return { ok: false, error: 'crt.sh sin filas', domain: d };
-    const set = new Set();
-    // Techo: en apex grandes crt.sh devuelve decenas de miles de filas; con
-    // las primeras 3000 basta para cazar (el resto es ruido de SaaS).
-    for (const r of rows.slice(0, 3000)) {
-      for (const n of String(r.name_value || '').split('\n')) {
-        const h = n.trim().toLowerCase().replace(/^\*\./, '');
-        if (h && (h === d || h.endsWith('.' + d))) set.add(h);
+    if (resp.status === 200) {
+      const rows = JSON.parse(resp.body);
+      if (Array.isArray(rows)) {
+        for (const r of rows.slice(0, 3000)) {
+          for (const n of String(r.name_value || '').split('\n')) {
+            const h = n.trim().toLowerCase().replace(/^\*\./, '');
+            if (h && (h === d || h.endsWith('.' + d))) set.add(h);
+          }
+        }
+        fuentes.push('crt.sh');
       }
     }
-    return { ok: true, domain: d, total: set.size, subdominios: [...set].sort().slice(0, 200) };
-  } catch (e) { return { ok: false, error: String(e.message || e).slice(0, 120), domain: d }; }
+  } catch {}
+  // 2) Fallbacks sin clave (HackerTarget + BufferOver TLS) si crt.sh falló
+  if (!set.size) {
+    try {
+      const ht = await fetch(`https://api.hackertarget.com/hostsearch/?q=${encodeURIComponent(d)}`, { timeout: 15000 });
+      if (ht.status === 200 && !/error/i.test(ht.body.slice(0, 60))) {
+        for (const line of ht.body.split('\n')) {
+          const h = line.split(',')[0].trim().toLowerCase();
+          if (h && (h === d || h.endsWith('.' + d))) set.add(h);
+        }
+        if (set.size) fuentes.push('hackertarget');
+      }
+    } catch {}
+    if (!set.size) {
+      try {
+        const bo = await fetch(`https://tls.bufferover.run/dns?q=.${encodeURIComponent(d)}`, { timeout: 15000 });
+        if (bo.status === 200) {
+          const j = JSON.parse(bo.body);
+          const list = Array.isArray(j.Results) ? j.Results : String(j.Results || '').split(',');
+          for (const item of list) {
+            const h = String(item).split(',')[0].trim().toLowerCase();
+            if (h && (h === d || h.endsWith('.' + d))) set.add(h);
+          }
+          if (set.size) fuentes.push('bufferover');
+        }
+      } catch {}
+    }
+  }
+  if (!set.size) return { ok: false, error: 'crt.sh caído y sin réplica (hackertarget/bufferover)', domain: d };
+  return { ok: true, domain: d, total: set.size, subdominios: [...set].sort().slice(0, 200), fuentes };
 }
 
 // ── 12. WAYBACK CDX — URLs históricas con foco en params y JS ────────────
 async function waybackCdx(domain, limit = 500) {
   const d = String(domain || '').trim().toLowerCase();
   if (!validDomain(d)) return { ok: false, error: 'Dominio inválido', domain };
-  try {
-    const url = `https://web.archive.org/cdx/search/cdx?url=*.${encodeURIComponent(d)}/*&output=json&fl=original&collapse=urlkey&limit=${Math.min(Number(limit) || 500, 2000)}`;
-    const resp = await fetch(url, { timeout: 25000 });
-    if (resp.status !== 200) return { ok: false, error: `wayback respondió ${resp.status}`, domain: d };
-    const rows = JSON.parse(resp.body).slice(1).map((r) => r[0]).filter(Boolean);
-    // Fuera ruido de scanners archivados (p. ej. sufijos 'savik%27%3C'): son
-    // artefactos de otros cazadores, no params reales de la app.
-    const BASURA = /savik|%27%3C|%3C\//i;
-    const limpias = rows.filter((u) => !BASURA.test(u));
+  const BASURA = /savik|%27%3C|%3C\//i;
+  const clasifica = (rows) => {
+    const limpias = rows.filter((u) => u && !BASURA.test(u));
     const conParams = limpias.filter((u) => u.includes('?'));
     const js = limpias.filter((u) => /\.js(\?|$)/i.test(u));
     return {
@@ -752,7 +777,36 @@ async function waybackCdx(domain, limit = 500) {
       conParametros: conParams.length, ficherosJs: js.length,
       muestraParams: conParams.slice(0, 30), muestraJs: js.slice(0, 30),
     };
-  } catch (e) { return { ok: false, error: String(e.message || e).slice(0, 120), domain: d }; }
+  };
+  // 1) wayback CDX
+  try {
+    const url = `https://web.archive.org/cdx/search/cdx?url=*.${encodeURIComponent(d)}/*&output=json&fl=original&collapse=urlkey&limit=${Math.min(Number(limit) || 500, 2000)}`;
+    const resp = await fetch(url, { timeout: 25000 });
+    if (resp.status === 200) {
+      const rows = JSON.parse(resp.body).slice(1).map((r) => r[0]).filter(Boolean);
+      return { ...clasifica(rows), fuente: 'wayback' };
+    }
+  } catch {}
+  // 2) Arquivo.pt (sin clave, API estable) si wayback falla
+  try {
+    const aq = await fetch(`https://arquivo.pt/textsearch?versionHistory=${encodeURIComponent(d)}&maxItems=${Math.min(Number(limit) || 50, 200)}`, { timeout: 20000 });
+    if (aq.status === 200) {
+      const j = JSON.parse(aq.body);
+      const rows = ((j.response_items) || []).map((it) => it.originalURL).filter(Boolean);
+      if (rows.length) return { ...clasifica(rows), fuente: 'arquivo.pt' };
+    }
+  } catch {}
+  // 3) Common Crawl (índice más reciente vía collinfo, sin clave)
+  try {
+    const ci = await fetch('https://index.commoncrawl.org/collinfo.json', { timeout: 15000 });
+    const idx = (JSON.parse(ci.body)[0] || {})['id'] || 'CC-MAIN-2025-30';
+    const cc = await fetch(`https://index.commoncrawl.org/${idx}-index?url=*.${encodeURIComponent(d)}/*&output=json&limit=${Math.min(Number(limit) || 200, 1000)}`, { timeout: 25000 });
+    if (cc.status === 200) {
+      const rows = cc.body.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l).url; } catch { return null; } }).filter(Boolean);
+      if (rows.length) return { ...clasifica(rows), fuente: 'commoncrawl:' + idx };
+    }
+  } catch {}
+  return { ok: false, error: 'wayback caído y sin réplica (arquivo.pt/commoncrawl)', domain: d };
 }
 
 // ── 13. DNS-over-HTTPS — registros sin depender de nslookup ──────────────
