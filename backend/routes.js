@@ -27,6 +27,28 @@ const kaliLocal = require('./lib/kali-local');
 const assistant = require('./lib/assistant');
 const models = require('./lib/models');
 const osint = require('./lib/osint');
+const osintTools = require('./lib/osint-tools');
+const osintFindings = require('./lib/osint-findings');
+const paramHunter = require('./lib/param-hunter');
+const proxyMod = require('./lib/proxy');
+
+// Sink del scanner pasivo del proxy: convierte candidatos en hallazgos de la
+// sesión con dedup estable (details.proxyScan.key). Devuelve el id del
+// hallazgo creado/actualizado (o null si ya existía).
+proxyMod && (() => {
+  const scannerMod = require('./lib/proxy-scanner');
+  scannerMod.setFindingSink(({ sessionId, key, severity, summary, details }) => {
+    const existing = db.getFindings(sessionId).find((f) => f.details && f.details.proxyScan && f.details.proxyScan.key === key);
+    if (existing) {
+      const merged = { ...existing.details, ...details, proxyScan: { ...existing.details.proxyScan, lastSeenAt: new Date().toISOString() } };
+      db.updateFindingDetails(sessionId, existing.id, merged);
+      return existing.id;
+    }
+    const r = db.addFinding(sessionId, 'PROXY-SCAN', summary, severity, details);
+    return (r && r.lastInsertRowid) || null;
+  });
+  return scannerMod;
+})();
 const gates = require('./lib/gates');
 const revocation = require('./lib/revocation');
 const dorks = require('./lib/dorks');
@@ -113,9 +135,195 @@ router.get('/labs/catalog', (req, res) => res.json({ ok: true, catalog: vmLabs.L
 router.get('/labs/inventory', async (req, res) => { try { res.json(await vmLabs.inventory()); } catch (e) { res.status(500).json({ ok: false, error: e.message, machines: [], providers: [] }); } });
 router.post('/labs/start', async (req, res) => { try { res.json(await vmLabs.start(req.body?.machine)); } catch (e) { res.status(400).json({ ok: false, error: e.message }); } });
 router.post('/labs/stop', async (req, res) => { try { res.json(await vmLabs.stop(req.body?.machine)); } catch (e) { res.status(400).json({ ok: false, error: e.message }); } });
+router.post('/labs/provision', async (req, res) => { try { res.json(await vmLabs.provision(req.body?.lab)); } catch (e) { res.status(400).json({ ok: false, error: e.message }); } });
+router.post('/labs/deprovision', async (req, res) => { try { res.json(await vmLabs.deprovision(req.body?.lab)); } catch (e) { res.status(400).json({ ok: false, error: e.message }); } });
 
 // ── OSINT Hub ────────────────────────────────────────────────────────
 router.get('/osint/status', (req, res) => res.json(osint.status()));
+// ── Herramientas OSINT locales (theHarvester, Sherlock, SpiderFoot, Social
+//    Analyzer, Amass, PhoneInfoga, Osmedeus). Instalación SIEMPRE explícita
+//    (confirm: true) y ejecución con target/args validados en lib/osint-tools.
+router.get('/osint/tools', async (req, res) => {
+  try { res.json(await osintTools.status()); } // status() es async (detecta cada herramienta)
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+router.post('/osint/tools/install', async (req, res) => {
+  const { id, confirm } = req.body || {};
+  if (confirm !== true) return res.status(400).json({ ok: false, error: 'instalación requiere confirm: true (descarga e instala software en el host local)' });
+  try { res.json(await osintTools.install(String(id || ''))); }
+  catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+router.post('/osint/tools/run', async (req, res) => {
+  const { id, target, args, timeoutMs } = req.body || {};
+  try {
+    const result = await osintTools.execCommand(String(id || ''), { target, args, timeoutMs });
+    // Ingesta automática: parsea la salida y crea/actualiza hallazgos + evidencia.
+    if (result.ok && typeof result.output === 'string') {
+      try { result.ingest = await osintFindings.ingest(String(id), result.target, result.output); } catch (e) { result.ingest = { ok: false, error: e.message }; }
+    }
+    res.json(result);
+  }
+  catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+// ── Hallazgos OSINT: ingesta manual, listado y export ───────────────────────
+router.post('/osint/findings/ingest', async (req, res) => {
+  const { id, target, output } = req.body || {};
+  if (!id || typeof output !== 'string') return res.status(400).json({ ok: false, error: 'id y output requeridos' });
+  try { res.json(await osintFindings.ingest(String(id), String(target || ''), output)); }
+  catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+});
+router.get('/osint/findings', (req, res) => {
+  const session = getSession();
+  const fTool = String(req.query.tool || '').trim().toLowerCase();
+  const fType = String(req.query.type || '').trim().toLowerCase();
+  const fOcc = parseInt(req.query.occ, 10) || 0;
+  // Facets (herramientas y tipos) calculados SIEMPRE sobre el total sin filtrar:
+  // los desplegables del Dashboard no se vacían cuando se aplica un filtro.
+  const all = db.getFindings(session.id).filter((f) => f.details && f.details.osint).map((f) => ({
+    id: f.id, tool: f.details.osint.tool, type: f.type, value: f.details.asset || '',
+    target: f.details.osint.target || '', occurrences: f.details.osint.occurrences || 1,
+    firstSeenAt: f.details.osint.firstSeenAt || null, lastSeenAt: f.details.osint.lastSeenAt || null,
+    severity: f.severity, summary: f.summary,
+  }));
+  const uniqSorted = (arr) => [...new Set(arr)].sort();
+  const facets = { tools: uniqSorted(all.map((r) => r.tool)), types: uniqSorted(all.map((r) => r.type)) };
+  // Stats globales (sin filtros) para la tarjeta del Dashboard:
+  //  · byTool → gráfico de barras por herramienta
+  //  · newLast24h → hallazgos cuyo firstSeenAt cae en las últimas 24 h
+  const byToolMap = new Map();
+  for (const r of all) byToolMap.set(r.tool, (byToolMap.get(r.tool) || 0) + 1);
+  const byTool = [...byToolMap.entries()]
+    .map(([tool, count]) => ({ tool, count }))
+    .sort((a, b2) => b2.count - a.count || a.tool.localeCompare(b2.tool));
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const newLast24h = all.filter((r) => {
+    const t = r.firstSeenAt ? Date.parse(r.firstSeenAt) : NaN;
+    return Number.isFinite(t) && t >= cutoff;
+  }).length;
+  const rows = all
+    .filter((r) => !fTool || r.tool === fTool)
+    .filter((r) => !fType || r.type === fType)
+    .filter((r) => r.occurrences >= fOcc);
+  res.json({ ok: true, count: rows.length, total: all.length, facets, byTool, newLast24h, findings: rows });
+});
+
+// ── Acciones sobre hallazgos OSINT: → pipeline / → targets / → Repeater ─────
+// Solo osint.subdomain es enviable. TODAS las acciones respetan el scope de la
+// sesión (mismo criterio textual que repeater.sendRaw y targetGate del
+// pipeline): un subdominio fuera de scope se rechaza con 400 ANTES de tocar
+// pipeline, targets o el cliente HTTP — fail-closed, sin excepciones.
+const SUBDOMAIN_RX = /^(?=.{1,253}$)([a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+
+function osintSendableFinding(session, rawId) {
+  const id = String(rawId || '').trim();
+  if (!id) return { error: 'id requerido' };
+  const f = db.getFindings(session.id).find((x) => String(x.id) === id && x.details && x.details.osint);
+  if (!f) return { error: 'hallazgo no encontrado' };
+  if (f.type !== 'osint.subdomain') return { error: 'solo osint.subdomain se puede enviar (este es ' + f.type + ')' };
+  const value = String(f.details.asset || '').trim().toLowerCase();
+  if (!SUBDOMAIN_RX.test(value)) return { error: 'el valor del hallazgo no es un hostname válido' };
+  return { finding: f, tool: f.details.osint.tool, value };
+}
+
+// out-of-scope de la sesión: SIEMPRE domina (ninguna acción lo salta)
+function inOutOfScope(session, host) {
+  const h = String(host || '').toLowerCase();
+  const oos = Array.isArray(session.out_of_scope) ? session.out_of_scope : [];
+  return oos.some((e) => { const s = String(e || '').trim().toLowerCase(); return s && (h === s || h.endsWith('.' + s)); });
+}
+
+// Scope estricto para pipeline/repeater: mismo criterio textual que
+// repeater.sendRaw y targetGate (fail-closed, sin excepciones)
+function osintScopeBlocked(session, host) {
+  if (inOutOfScope(session, host)) return '"' + host + '" está en el out-of-scope de la sesión';
+  if (!Array.isArray(session.scope) || !session.scope.length || !netMod.inScope(host)) {
+    return 'FUERA DE SCOPE: "' + host + '" no está en el scope de la sesión. Usa "＋ targets" para añadirlo (eso invalida un OPPLAN aprobado, por diseño).';
+  }
+  return null;
+}
+
+router.post('/osint/findings/send-to-pipeline', (req, res) => {
+  const s = getSession();
+  const v = osintSendableFinding(s, req.body?.id);
+  if (v.error) return res.status(400).json({ ok: false, error: v.error });
+  const blocked = osintScopeBlocked(s, v.value);
+  if (blocked) return res.status(400).json({ ok: false, error: blocked });
+  // Fijar el target de la sesión (el pipeline arranca desde ahí) y dejar
+  // trazabilidad como hallazgo de pipeline (sin details.osint: no aparece
+  // en la vista OSINT, sí en la unificada y en los facets).
+  s.target = v.value;
+  db.saveSession(s.id, s);
+  const fingerprint = 'pipeline:' + v.value + ':' + new Date().toISOString().slice(0, 10);
+  db.addFinding(s.id, 'TARGET',
+    'Target de pipeline fijado desde hallazgo OSINT: ' + v.value + ' (' + v.tool + ')',
+    'info',
+    { sentFrom: 'osint-finding', findingId: v.finding.id, tool: v.tool, osintTarget: v.finding.details.osint.target || '', subdomain: v.value, fingerprint });
+  res.json({ ok: true, sent: 'pipeline', target: s.target, sessionId: s.id, pipelineFingerprint: fingerprint });
+});
+
+router.post('/osint/findings/send-to-targets', (req, res) => {
+  const s = getSession();
+  const v = osintSendableFinding(s, req.body?.id);
+  if (v.error) return res.status(400).json({ ok: false, error: v.error });
+  if (inOutOfScope(s, v.value)) return res.status(400).json({ ok: false, error: '"' + v.value + '" está en el out-of-scope de la sesión' });
+  // Decisión humana de ampliar superficie: el valor debe ser subdominio del
+  // dominio del target de sesión (relación de dominio, no de scope).
+  const tHost = netMod.normalizeHost(s.target || '');
+  const related = tHost && (v.value === tHost || v.value.endsWith('.' + tHost));
+  if (!related) return res.status(400).json({ ok: false, error: '"' + v.value + '" no es subdominio del target de sesión (' + (tHost || 'sin target') + ')' });
+  const existing = db.stmts.listTargets.all().some((t) => String(t.name || '').toLowerCase() === v.value);
+  if (!existing) {
+    const id = require('node:crypto').randomUUID();
+    db.stmts.insertTarget.run(id, v.value, JSON.stringify([v.value]), '', new Date().toISOString());
+  }
+  // Añadir al scope de sesión si no estaba (isApprovedForSession exige igualdad
+  // exacta de scope: un OPPLAN aprobado queda inválido hasta re-aprobar).
+  const scope = Array.isArray(s.scope) ? s.scope.slice() : [];
+  const wasInScope = scope.some((e) => { const x = String(e || '').trim().toLowerCase(); return x === v.value || (x.startsWith('*.') && v.value.endsWith('.' + x.slice(2))); });
+  let addedToScope = false;
+  if (!wasInScope) { scope.push(v.value); s.scope = scope; db.saveSession(s.id, s); netMod.setScope(s.scope); addedToScope = true; }
+  const planInvalidated = Boolean(addedToScope && s.opplan && s.opplan.status === 'aprobado');
+  if (planInvalidated) { s.opplan.status = 'borrador'; db.saveSession(s.id, s); }
+  res.json({ ok: true, sent: 'targets', target: v.value, already: Boolean(existing && !addedToScope), addedToScope, planInvalidated });
+});
+
+router.post('/osint/findings/send-to-repeater', (req, res) => {
+  const s = getSession();
+  const v = osintSendableFinding(s, req.body?.id);
+  if (v.error) return res.status(400).json({ ok: false, error: v.error });
+  const blocked = osintScopeBlocked(s, v.value);
+  if (blocked) return res.status(400).json({ ok: false, error: blocked });
+  const raw = 'GET / HTTP/1.1\r\nHost: ' + v.value + '\r\nAccept: */*\r\nUser-Agent: ' + (s.user_agent || netMod.getUA()) + '\r\nConnection: close';
+  res.json({ ok: true, sent: 'repeater', target: v.value, url: 'https://' + v.value, raw });
+});
+// ── Proxy MITM local (interceptor + historial + replay) ────────────────────
+router.get('/proxy/status', (req, res) => res.json(proxyMod.status()));
+router.post('/proxy/start', async (req, res) => { try { const p = Number(req.body?.port); res.json(await proxyMod.start({ port: Number.isFinite(p) && p >= 0 ? p : 8083 })); } catch (e) { res.status(400).json({ ok: false, error: e.message }); } });
+router.post('/proxy/stop', (req, res) => { const s = getSession(); res.json(proxyMod.stop({ sessionId: s.id })); });
+router.post('/proxy/intercept', (req, res) => res.json(proxyMod.setIntercept(Boolean(req.body?.on))));
+router.post('/proxy/scope', (req, res) => res.json(proxyMod.setScope(Array.isArray(req.body?.scope) ? req.body.scope : [])));
+router.get('/proxy/history', (req, res) => res.json(proxyMod.history({ limit: Number(req.query.limit) || 100, q: String(req.query.q || '') })));
+router.get('/proxy/history/:id', (req, res) => { const e = proxyMod.historyEntry(req.params.id); if (!e) return res.status(404).json({ ok: false, error: 'entrada no encontrada' }); res.json(e); });
+router.get('/proxy/pending', (req, res) => res.json(proxyMod.pendingList()));
+router.post('/proxy/pending/:id/resolve', (req, res) => res.json(proxyMod.resolvePending(req.params.id, req.body || {})));
+router.post('/proxy/replay/:id', async (req, res) => { try { res.json(await proxyMod.replay(Number(req.params.id), { raw: req.body?.raw || null })); } catch (e) { res.status(400).json({ ok: false, error: e.message }); } });
+// ── Scanner pasivo del proxy ────────────────────────────────────────────────
+router.get('/proxy/scanner', (req, res) => res.json(proxyMod.scannerStatus()));
+router.post('/proxy/scanner', (req, res) => res.json(proxyMod.scannerToggle(Boolean(req.body?.enabled))));
+router.post('/proxy/scanner/flush', (req, res) => { const s = getSession(); res.json(proxyMod.scannerFlush(s.id)); });
+router.get('/proxy/ca.crt', (req, res) => {
+  const ca = proxyMod.ensureCA();
+  res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+  res.setHeader('Content-Disposition', 'attachment; filename="knk-mitm-ca.crt"');
+  res.send(ca.certPem);
+});
+router.get('/osint/findings/export', (req, res) => {
+  const format = ['json', 'csv', 'md'].includes(req.query.format) ? req.query.format : 'json';
+  const out = osintFindings.exportFindings({ format });
+  res.setHeader('Content-Type', out.mime);
+  res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+  res.send(out.body);
+});
 router.get('/osint/search', async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.status(400).json({ error: 'q requerido' });
@@ -212,6 +420,33 @@ router.post('/assistant/talk', async (req, res) => {
   try { res.json(await assistant.talk({ prompt, mode, model, sessionId: s.id, useVault, useMemory, history })); }
   catch (e) { res.json({ text: '', offline: true, error: e.message, mode: mode || 'chat' }); }
 });
+// Stream del asistente (SSE): eventos delta/tools/done/error. La sesión se
+// fija ANTES de emitir: el orden de cabeceras SSE es estable y el cierre
+// siempre ocurre (no se cuelga la UI si el LLM muere a mitad).
+const assistantTools = require('./lib/assistant-tools');
+router.post('/assistant/stream', async (req, res) => {
+  const { prompt, mode, model, useVault, useMemory, history } = req.body || {};
+  if (!prompt) return res.status(400).json({ error: 'prompt requerido' });
+  const s = getSession();
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  const send = (event) => {
+    try { res.write('data: ' + JSON.stringify(event) + '\n\n'); } catch {}
+  };
+  try {
+    await assistantTools.talkStream(
+      { prompt, mode, model, sessionId: s.id, useVault, useMemory, history },
+      send
+    );
+  } catch (e) {
+    send({ type: 'error', error: e.message });
+  }
+  try { res.end(); } catch {}
+});
 router.get('/memory', (req, res) => res.json({ items: assistant.listMemory(getSession().id) }));
 router.post('/memory', (req, res) => {
   const { key, value } = req.body || {};
@@ -241,10 +476,98 @@ router.get('/status', async (req, res) => {
   res.json({ ok: true, up: llm.up, checkedAt: new Date().toISOString(), session: { target: s.target, scope: s.scope, opplan: s.opplan?.nombre ? { nombre: s.opplan.nombre, status: s.opplan.status } : null, findings: db.getFindings(s.id).length, phases: s.phases }, ollama: { up: llm.up, model: llm.model, models: llm.models || [] } });
 });
 router.get('/session', (req, res) => { const s = getSession(); res.json({ ...s, findings: db.getFindings(s.id) }); });
-router.get('/findings', (req, res) => { const s = getSession(); res.json(db.getFindings(s.id)); });
+router.get('/findings', (req, res) => {
+  // ?scope=all → todas las sesiones con programa resuelto (el Dashboard cuenta
+  // global; sin esto el panel solo ve la sesión actual y los medium "desaparecen").
+  if (req.query.scope === 'all') return res.json(db.getAllFindings());
+  const s = getSession(); res.json(db.getFindings(s.id));
+});
+
+// Triaje de un hallazgo (estado + severidad + nota). Global por id para poder
+// triar desde la vista "todas las sesiones".
+router.post('/findings/:id/triage', (req, res) => {
+  const b = req.body || {};
+  const r = db.triageFinding(req.params.id, { status: b.status, severity: b.severity, note: b.note });
+  if (!r.ok) return res.status(r.error === 'hallazgo no encontrado' ? 404 : 400).json(r);
+  res.json(r);
+});
+
+// ── Borrador de reporte desde Hallazgos filtrados ───────────────────────────
+// El cliente envía SOLO los ids visibles tras sus filtros (severidad, tipo,
+// búsqueda) + la atestación del operador. El backend vuelve a leer los
+// hallazgos de la sesión (nunca acepta contenido de hallazgos del cliente),
+// deriva el meta y llama a report.generateReport(). Las compuertas se
+// atestan aquí: sin atestación no hay borrador (el gate es explícito, no
+// implícito). El resultado se guarda como reporte 'borrador' y se devuelve
+// el markdown + json + slug para re-generar/editar.
+router.post('/findings/draft-report', (req, res) => {
+  const s = getSession();
+  const b = req.body || {};
+  const ids = Array.isArray(b.ids) ? b.ids.map(Number).filter(Number.isInteger) : [];
+  if (!ids.length) return res.status(400).json({ ok: false, error: 'ids requerido: envía los hallazgos visibles tras tus filtros' });
+  const attest = b.attestation && typeof b.attestation === 'object' ? b.attestation : null;
+  if (!attest) return res.status(400).json({ ok: false, error: 'atestación del operador requerida (compuertas rep-1..rep-10)' });
+  if (attest.humanReview !== true || String(attest.reviewNote || '').trim().length < 20) {
+    return res.status(400).json({ ok: false, error: 'revisión humana obligatoria: humanReview:true + reviewNote (≥20 caracteres)' });
+  }
+
+  const all = db.getFindings(s.id);
+  const byId = new Map(all.map((f) => [f.id, f]));
+  const selected = ids.map((id) => byId.get(id)).filter(Boolean);
+  if (!selected.length) return res.status(400).json({ ok: false, error: 'ninguno de los ids existe en esta sesión' });
+
+  const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+  selected.sort((a, b2) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b2.severity] ?? 9));
+  const top = selected[0];
+
+  const meta = {
+    // Identidad del reporte: el hallazgo de mayor severidad da el título/tipo;
+    // el resto se listan como hallazgos asociados en impacto y pasos.
+    title: (b.title || top.summary).slice(0, 120),
+    program: b.program || s.artifacts?.programName || s.target || '—',
+    asset: b.asset || top.details?.asset || top.details?.url || s.target || '—',
+    bugType: b.bugType || top.type || '—',
+    cwe: b.cwe || top.details?.cwe || '—',
+    cvss: b.cvss || top.details?.cvss || '—',
+    severity: b.severity || top.severity || 'info',
+    impact: b.impact || selected.map((f) => `• [${f.severity}] ${f.summary}`).join('\n') || 'PENDIENTE',
+    remediation: b.remediation || 'PENDIENTE — revisar por hallazgo antes de enviar',
+    steps: selected.map((f, i) => `${i + 1}. [${f.type}] ${f.summary} — ${f.details?.url || f.details?.asset || 'sin URL'}`),
+    evidence: selected.map((f) => `${f.details?.evidence ? 'evidencia ' + f.details.evidence : 'pendiente de adjuntar'} (#${f.id})`),
+    inScope: netMod.inScope(top.details?.asset || top.details?.url || s.target),
+    noDuplicate: attest.noDuplicate === true,
+    notDisqualifier: attest.notDisqualifier === true,
+    exploitable: attest.exploitable === true,
+    evidenceScreenshots: attest.evidenceScreenshots === true,
+    evidenceRequestResponse: attest.evidenceRequestResponse === true,
+    pocMinimal: attest.pocMinimal === true,
+    noPII: attest.noPII === true,
+    humanReview: attest.humanReview === true,
+    reviewNote: String(attest.reviewNote || ''),
+    reproducibleCount: Number(attest.reproducibleCount || 0),
+    severityHonest: true,
+    programUrl: s.artifacts?.programUrl || '',
+    scopeDocumentado: (s.scope || []).join(', '),
+    userAgent: s.artifacts?.userAgent || '—',
+  };
+
+  const rep = reportMod.generateReport(meta);
+  if (!rep.allowed) return res.json({ ok: false, error: 'compuertas bloqueantes', blockers: rep.blockers });
+
+  // Slug determinista por sesión+selección: re-generar los mismos ids
+  // ACTUALIZA el mismo borrador (saveReport hace upsert por slug) en vez de
+  // duplicar. djb2 sobre los ids ordenados — sin depender del timestamp que
+  // generateReport pone dentro del id del reporte.
+  let h = 5381;
+  for (const c of ids.slice().sort((a, b2) => a - b2).join(',')) h = ((h << 5) + h + c.charCodeAt(0)) >>> 0;
+  const slug = b.slug || ('hallazgos-' + s.id + '-' + h.toString(36));
+  db.saveReport(s.id, slug, rep.json, 'borrador');
+  res.json({ ok: true, slug, id: rep.json.id, json: rep.json, report: rep.report });
+});
 router.post('/target', (req, res) => {
   const s = getSession();
   const { target, scope, userAgent, rateLimitMs, programUrl, programPolicy } = req.body || {};
+  if (target && String(target).trim().toLowerCase() === 'x.onion') return res.status(400).json({ ok: false, error: 'host no permitido como target' });
   if (target) s.target = target;
   if (scope) s.scope = Array.isArray(scope) ? scope : String(scope).split(',').map(x => x.trim()).filter(Boolean);
   if (userAgent) s.user_agent = userAgent;
@@ -267,7 +590,12 @@ router.post('/opplan/approve', (req, res) => {
   if (!s.opplan || !s.opplan.nombre) return res.status(400).json({ ok: false, error: 'No hay OPPLAN' });
   s.opplan.status = 'aprobado'; s.opplan.aprobadoEn = new Date().toISOString();
   db.saveSession(s.id, s);
-  res.json({ ok: true, opplan: s.opplan });
+  // Briefing: el asistente conoce el plan aprobado (memoria persistente por sesión)
+  try {
+    const resumen = `${s.opplan.nombre || 'OPPLAN'} — objetivo: ${s.target || 'n/d'}; scope: ${(s.scope || []).join(', ') || 'n/d'}; fases: ${(s.opplan.fases || []).map((f) => f.nombre || f.id || '?').join(', ') || 'n/d'}`;
+    assistant.addMemory(s.id, 'opplan', resumen);
+  } catch {}
+  res.json({ ok: true, opplan: s.opplan, briefing: true });
 });
 router.post('/parse-program', async (req, res) => {
   const { url } = req.body || {};
@@ -316,6 +644,16 @@ router.post('/evidence', (req, res) => {
   db.stmts.insertEvidence.run(getSession().id, null, name, type || 'text', file); res.json({ ok: true, file });
 });
 router.get('/evidence', (req, res) => res.json(db.stmts.getEvidence.all(getSession().id)));
+// Descarga autenticada de un fichero de evidencia (solo dentro de ~/.knk-suite/evidencia)
+router.get('/evidence/download', (req, res) => {
+  const p = path.resolve(String(req.query.path || ''));
+  const dir = path.join(os.homedir(), '.knk-suite', 'evidencia');
+  if (!p.startsWith(dir + path.sep)) return res.status(403).json({ ok: false, error: 'ruta fuera de evidencia' });
+  if (!fs.existsSync(p)) return res.status(404).json({ ok: false, error: 'fichero no encontrado' });
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${path.basename(p)}"`);
+  res.send(fs.readFileSync(p));
+});
 
 // ── Gates / compliance / browser / dorks / Docker ───────────────────
 router.post('/gates/validate', (req, res) => {
@@ -497,6 +835,153 @@ router.post('/findings', (req, res) => {
   res.json({ ok: true, id: r.lastInsertRowid, total: db.getFindings(s.id).length });
 });
 
+// ── Param Hunter: caza de parámetros reflejados (Top-25 XSS / BAC) ─────────
+// Caza SOLO autorizada: scope obligatorio de la sesión (como el Repeater),
+// canario alfanumérico inofensivo (sin payloads), limiter global de net.fetch.
+router.get('/params/wordlists', (req, res) => {
+  res.json({ ok: true, wordlists: paramHunter.wordlists() });
+});
+
+router.post('/params/hunt', async (req, res) => {
+  const { url, wordlist, limit, maxParams, useHistory, mode } = req.body || {};
+  if (typeof url !== 'string' || !url.trim()) return res.status(400).json({ ok: false, error: 'url requerida' });
+  const session = getSession();
+  try {
+    // Priorizar parámetros vistos en tráfico real (historial del proxy del
+    // mismo host) salvo que el cliente lo desactive con useHistory: false.
+    let historyParams = [];
+    let bodyParams = [];
+    if (useHistory !== false) {
+      try {
+        let hostname = '';
+        try { hostname = new URL(url).hostname; } catch { /* url ya validada dentro */ }
+        historyParams = proxyMod.historyParams({ host: hostname, limit: 60 });
+        if (mode === 'form') bodyParams = proxyMod.historyBodyParams({ host: hostname, limit: 60 });
+      } catch { historyParams = []; bodyParams = []; }
+    }
+    const r = await paramHunter.hunt({ url, wordlist, limit: Number(limit) || 25, maxParams: Number(maxParams) || 40, scope: session.scope, historyParams, mode, bodyParams });
+    if (!r.ok) return res.json({ ok: false, error: r.error });
+    // sqli_error = evidencia objetiva (error de BD con firma): hallazgo automático
+    // (reflected/param_exists siguen siendo manuales; redirect_param se valida a mano)
+    for (const row of r.results || []) {
+      if (row.behavior !== 'sqli_error' || row.priority !== 'P1') continue;
+      try {
+        db.addFinding(session.id, 'PARAM-HUNTER',
+          `[ParamHunter] ${row.param} (sqli_error · ${row.context || 'n/a'}) en ${String(url).slice(0, 120)}`,
+          'high',
+          { url, param: row.param, behavior: 'sqli_error', context: row.context || '', priority: 'P1', detail: row.detail || '', source: 'param-hunter', asset: url });
+      } catch { /* nunca romper la caza por un finding */ }
+    }
+    res.json(r);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Convierte un resultado de la caza en hallazgo de la misión
+router.post('/params/finding', (req, res) => {
+  const { url, param, behavior, context, priority, detail } = req.body || {};
+  if (!url || !param) return res.status(400).json({ ok: false, error: 'url y param requeridos' });
+  if (!['reflected', 'encoded', 'partial', 'param_exists', 'sqli_error', 'redirect_param'].includes(behavior)) {
+    return res.status(400).json({ ok: false, error: 'behavior inválido' });
+  }
+  const s = getSession();
+  const sev = behavior === 'sqli_error' ? 'high'
+    : behavior === 'redirect_param' ? 'medium'
+    : behavior === 'reflected' ? (priority === 'P1' ? 'high' : priority === 'P2' ? 'medium' : 'low')
+    : 'info';
+  const r = db.addFinding(s.id, 'PARAM-HUNTER', `[ParamHunter] ${param} (${behavior} · ${context || 'n/a'}) en ${String(url).slice(0, 120)}`, sev, {
+    url, param, behavior, context, priority: priority || null, detail: detail || '', source: 'param-hunter', asset: url,
+  });
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+// Facetado unificado de hallazgos (OSINT + pipeline) de la sesión: cuenta por
+// herramienta, tipo y ocurrencias. Alimenta los filtros del Dashboard.
+router.get('/findings/facets', (req, res) => {
+  const session = getSession();
+  const findings = db.getFindings(session.id);
+  const osint = [];
+  const proxy = [];
+  const pipeline = [];
+  const originOf = (f) => {
+    const d = f.details || {};
+    if (d.osint) return 'osint';
+    if (d.proxyScan || d.source === 'proxy-scanner' || f.type === 'PROXY-SCAN') return 'proxy';
+    return 'pipeline';
+  };
+  for (const f of findings) {
+    const o = originOf(f);
+    if (o === 'osint') osint.push(f); else if (o === 'proxy') proxy.push(f); else pipeline.push(f);
+  }
+  const tally = (arr, pick) => {
+    const m = new Map();
+    for (const f of arr) { const k = pick(f) || '(sin datos)'; m.set(k, (m.get(k) || 0) + 1); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, count }));
+  };
+  res.json({
+    ok: true,
+    total: findings.length,
+    osint: { count: osint.length, byTool: tally(osint, (f) => f.details.osint.tool), byType: tally(osint, (f) => f.type) },
+    proxy: { count: proxy.length, byType: tally(proxy, (f) => (f.details && f.details.type) || f.type), bySeverity: tally(proxy, (f) => f.severity) },
+    pipeline: { count: pipeline.length, byType: tally(pipeline, (f) => f.type), bySeverity: tally(pipeline, (f) => f.severity) },
+  });
+});
+
+// Export UNIFICADO (OSINT + pipeline) en JSON / CSV / Markdown. Cada fila lleva
+// origin: 'osint' | 'pipeline'. Para OSINT conserva tool/type/value/target/
+// occurrences/lastSeenAt; para pipeline, summary/asset/severity.
+router.get('/findings/export/unified', (req, res) => {
+  const format = ['json', 'csv', 'md'].includes(req.query.format) ? req.query.format : 'json';
+  const session = getSession();
+  const now = new Date().toISOString();
+  const rows = db.getFindings(session.id).map((f) => {
+    const d = f.details || {};
+    if (d.osint) {
+      return {
+        origin: 'osint', id: f.id, type: f.type, tool: d.osint.tool,
+        value: d.asset || '', summary: f.summary, severity: f.severity,
+        target: d.osint.target || '', occurrences: d.osint.occurrences || 1,
+        lastSeenAt: d.osint.lastSeenAt || null, asset: d.asset || '',
+      };
+    }
+    if (d.proxyScan || d.source === 'proxy-scanner' || f.type === 'PROXY-SCAN') {
+      return {
+        origin: 'proxy', id: f.id, type: d.type || f.type, tool: d.source || 'proxy-scanner',
+        value: d.asset || d.url || '', summary: f.summary, severity: f.severity,
+        target: session.target || '', occurrences: 1,
+        lastSeenAt: (d.proxyScan && (d.proxyScan.lastSeenAt || d.proxyScan.firstSeenAt)) || f.created_at || null,
+        asset: d.asset || d.url || '',
+      };
+    }
+    return {
+      origin: 'pipeline', id: f.id, type: f.type, tool: d.source || 'pipeline',
+      value: d.asset || d.url || '', summary: f.summary, severity: f.severity,
+      target: session.target || '', occurrences: 1, lastSeenAt: f.created_at || null,
+      asset: d.asset || d.url || '',
+    };
+  });
+  if (format === 'csv') {
+    const headers = ['origin', 'id', 'tool', 'type', 'value', 'severity', 'occurrences', 'lastSeenAt', 'summary'];
+    const cell = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const body = [headers.join(',')].concat(rows.map((r) => headers.map((h) => cell(r[h])).join(','))).join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="findings-unified.csv"');
+    return res.send(body);
+  }
+  if (format === 'md') {
+    const lines = [
+      '# Hallazgos unificados (OSINT + pipeline)', '',
+      `Sesión: ${session.id} — objetivo: ${session.target || 'n/a'} — ${now}`, '',
+      '| origin | tool | type | value | sev | occ | summary |',
+      '|---|---|---|---|---|---|---|',
+    ].concat(rows.map((r) => `| ${r.origin} | ${r.tool} | ${r.type} | ${String(r.value || '').slice(0, 60)} | ${r.severity} | ${r.occurrences} | ${String(r.summary || '').replace(/\|/g, '/').slice(0, 80)} |`));
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="findings-unified.md"');
+    return res.send(lines.join('\n'));
+  }
+  res.setHeader('Content-Disposition', 'attachment; filename="findings-unified.json"');
+  res.json({ target: session.target, exportedAt: now, count: rows.length, osint: rows.filter((r) => r.origin === 'osint').length, proxy: rows.filter((r) => r.origin === 'proxy').length, pipeline: rows.filter((r) => r.origin === 'pipeline').length, findings: rows });
+});
+
 router.get('/findings/export/json', (req, res) => {
   const session = getSession();
   const findings = db.getFindings(session.id).map(findingRow);
@@ -551,6 +1036,18 @@ router.delete('/targets/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Presets de programa (Bugcrowd/H1/Intigriti) ──────────────────────
+// Aplica scope + out-of-scope + ritmo + OPPLAN base a la sesión. El preset
+// fija program_name → los hallazgos heredan programa (backfill + getAll).
+router.get('/presets', (req, res) => res.json({ ok: true, presets: require('./lib/presets').listPresets() }));
+router.post('/presets/apply', (req, res) => {
+  const s = getSession();
+  const r = require('./lib/presets').applyPreset(s, req.body?.id);
+  if (!r.ok) return res.json(r);
+  db.saveSession(s.id, s);
+  res.json(r);
+});
+
 
 // ── Intruder (fuzzer pequeño estilo Burp, acoplado al Repeater) ────────────
 // Caps duros server-side; payloads del usuario; cada petición pasa por
@@ -561,14 +1058,26 @@ router.get('/intruder/config', (req, res) => {
     maxPayloads: intruder.MAX_PAYLOADS,
     maxConcurrent: intruder.MAX_CONCURRENT,
     maxRunsConcurrent: intruder.MAX_RUNS_CONCURRENT,
-  } });
+  }, presets: Object.entries(intruder.PAYLOAD_SETS).map(([id, s]) => ({ id, label: s.label, count: s.payloads.length })) });
+});
+
+// Peticiones del historial del proxy preparadas para el Intruder: raw con
+// posiciones §...§ ya marcadas (primer parámetro de query y de cuerpo).
+router.get('/intruder/from-proxy/:id', (req, res) => {
+  const w = proxyMod.historyEntry(req.params.id);
+  const e = w && w.entry;
+  if (!e) return res.status(404).json({ ok: false, error: 'entrada no encontrada' });
+  if (e.scheme === 'tunnel') return res.status(400).json({ ok: false, error: 'una petición CONNECT no es fuzzable' });
+  const raw = intruder.markPositions(proxyMod.buildRawRequest(e));
+  const positions = (raw.match(/§[^§]*§/g) || []).length;
+  res.json({ ok: true, id: e.id, method: e.method, url: e.url, raw, positions, presets: Object.entries(intruder.PAYLOAD_SETS).map(([pid, s]) => ({ id: pid, label: s.label, count: s.payloads.length })) });
 });
 
 router.post('/intruder/start', async (req, res) => {
   try {
-    const { raw, payloadText, maxRedirects } = req.body || {};
+    const { raw, payloadText, preset, maxRedirects } = req.body || {};
     const s = getSession();
-    const r = await intruder.startRun(s, { raw, payloadText, maxRedirects });
+    const r = await intruder.startRun(s, { raw, payloadText, preset, maxRedirects });
     if (!r.ok) return res.status(400).json(r);
     res.json({ ok: true, run: r.run });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -610,7 +1119,9 @@ router.get('/docker/containers', async (req, res) => {
 
 router.post('/docker/start/:id', (req, res) => {
   try {
-    require('child_process').execSync(`docker start ${req.params.id}`, { encoding: 'utf8' });
+    // Allowlist estricta: ids docker [a-zA-Z0-9_.-] + execFile (sin shell).
+    if (!/^[a-zA-Z0-9_.-]{1,128}$/.test(req.params.id || '')) return res.json({ ok: false, error: 'id docker inválido' });
+    require('child_process').execFileSync('docker', ['start', req.params.id], { encoding: 'utf8' });
     res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, error: e.message });
@@ -619,7 +1130,8 @@ router.post('/docker/start/:id', (req, res) => {
 
 router.post('/docker/stop/:id', (req, res) => {
   try {
-    require('child_process').execSync(`docker stop ${req.params.id}`, { encoding: 'utf8' });
+    if (!/^[a-zA-Z0-9_.-]{1,128}$/.test(req.params.id || '')) return res.json({ ok: false, error: 'id docker inválido' });
+    require('child_process').execFileSync('docker', ['stop', req.params.id], { encoding: 'utf8' });
     res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, error: e.message });
@@ -629,6 +1141,54 @@ router.post('/docker/stop/:id', (req, res) => {
 // ── OSINT Hub ──────────────────────────────────────────────────────
 const osintHub = require('./lib/osint-hub');
 const cameraScanner = require('./lib/camera-scanner');
+
+// ── Recon pasivo (crt.sh, wayback, DoH, takeover, security.txt, SPF/DMARC)
+// Motor fusionado sin claves; ritmo + anti-SSRF propios (no consume scope).
+const reconHub = require('./lib/recon-hub');
+router.get('/recon/crtsh', async (req, res) => {
+  const { domain } = req.query;
+  if (!domain) return res.json({ ok: false, error: 'Domain required' });
+  res.json(await reconHub.crtshSubs(domain));
+});
+router.get('/recon/wayback', async (req, res) => {
+  const { domain, limit } = req.query;
+  if (!domain) return res.json({ ok: false, error: 'Domain required' });
+  res.json(await reconHub.waybackCdx(domain, limit));
+});
+router.get('/recon/doh', async (req, res) => {
+  const { domain, type } = req.query;
+  if (!domain) return res.json({ ok: false, error: 'Domain required' });
+  res.json(await reconHub.dohRecords(domain, type));
+});
+router.get('/recon/takeover', (req, res) => {
+  const s = getSession();
+  res.json(reconHub.checkTakeoverHub((s.artifacts || {}).cadenas_cname || {}));
+});
+router.get('/recon/securitytxt', async (req, res) => {
+  const { domain } = req.query;
+  if (!domain) return res.json({ ok: false, error: 'Domain required' });
+  res.json(await reconHub.securityTxt(domain));
+});
+router.get('/recon/spfdmarc', async (req, res) => {
+  const { domain } = req.query;
+  if (!domain) return res.json({ ok: false, error: 'Domain required' });
+  res.json(await reconHub.spfDmarc(domain));
+});
+router.get('/recon/investigate', async (req, res) => {
+  const { target } = req.query;
+  if (!target) return res.json({ ok: false, error: 'Target required (email, teléfono o usuario)' });
+  res.json(await reconHub.investigate(target));
+});
+
+// ── Hub BB: guía de caza por clase + decodificador ───────────────────
+const bbHub = require('./lib/bb-hub');
+router.get('/hub/guide', (req, res) => res.json({ ok: true, clases: bbHub.listGuide() }));
+router.get('/hub/guide/:clase', (req, res) => res.json(bbHub.getGuide(req.params.clase)));
+router.post('/hub/decode', (req, res) => {
+  const { input } = req.body || {};
+  if (!input) return res.json({ ok: false, error: 'input requerido' });
+  res.json({ ok: true, ...bbHub.decode(input) });
+});
 
 // ── Camera Scanner (new) ───────────────────────────────────────────
 

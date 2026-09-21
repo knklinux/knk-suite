@@ -17,9 +17,9 @@ function getStats(db) {
   const recentRows = db.query(
     `SELECT 'finding' as type, type || ': ' || summary as message, created_at as timestamp FROM findings
      UNION ALL
-     SELECT 'session' as type, 'Sesión #' || id || COALESCE(' — ' || target, '') as message, created_at as timestamp
+     SELECT 'session' as type, 'Sesión #' || id || COALESCE(' — ' || target, '') as message, created_at as timestamp FROM sessions
      UNION ALL
-     SELECT 'report' as type, 'Reporte ' || slug || ' (' || status || ')' as message, created_at as timestamp
+     SELECT 'report' as type, 'Reporte ' || slug || ' (' || status || ')' as message, created_at as timestamp FROM reports
      ORDER BY timestamp DESC LIMIT 10`
   );
   const recentActivity = recentRows.map(r => ({

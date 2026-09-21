@@ -149,7 +149,34 @@ async function initDB() {
   _db.run('PRAGMA journal_mode = WAL');
   _db.run('PRAGMA foreign_keys = ON');
   _db.run(SCHEMA);
+  migrateColumns();
+  try { stmts.backfillFindingPrograms.run(); } catch (e) { console.error('Backfill programas:', e.message); }
   scheduleSave();
+}
+
+// ── Migración defensiva: añade columnas a tablas creadas por esquemas viejos
+// (CREATE TABLE IF NOT EXISTS no las añade; sin esto, queries como el UNION
+// del dashboard fallan con "no such column").
+function migrateColumns() {
+  const wanted = {
+    reports: ['slug TEXT', "data TEXT DEFAULT '{}'", "status TEXT DEFAULT 'borrador'", 'updated_at DATETIME DEFAULT CURRENT_TIMESTAMP'],
+    findings: ["status TEXT DEFAULT 'nuevo'", 'program TEXT DEFAULT \'\''],
+    sessions: ['program_url TEXT', 'program_name TEXT', 'program_policy TEXT', "out_of_scope TEXT DEFAULT '[]'"],
+  };
+  for (const [table, cols] of Object.entries(wanted)) {
+    let existing = [];
+    try {
+      const r = _db.exec(`PRAGMA table_info(${table})`);
+      if (r.length > 0) existing = r[0].values.map(v => v[1]);
+    } catch { continue; }
+    for (const def of cols) {
+      const name = def.split(' ')[0];
+      if (!existing.includes(name)) {
+        try { _db.run(`ALTER TABLE ${table} ADD COLUMN ${def}`); }
+        catch (e) { console.error('Migración columna:', table + '.' + name, e.message); }
+      }
+    }
+  }
 }
 
 // ── Prepared Statements ──────────────────────────────────────────
@@ -167,6 +194,10 @@ const stmts = {
   updateFindingDetails: stmtRunner(`UPDATE findings SET details = ? WHERE session_id = ? AND id = ?`),
   getFindings: stmtAller(`SELECT * FROM findings WHERE session_id = ? ORDER BY id DESC`),
   getFinding: stmtGetter(`SELECT * FROM findings WHERE session_id = ? AND id = ?`),
+  getFindingById: stmtGetter(`SELECT * FROM findings WHERE id = ?`),
+  getAllFindings: stmtAller(`SELECT f.*, s.target as session_target, s.program_name as session_program, s.program_url as session_program_url FROM findings f LEFT JOIN sessions s ON s.id = f.session_id ORDER BY f.id DESC`),
+  updateFindingTriage: stmtRunner(`UPDATE findings SET status = ?, severity = ?, details = ? WHERE id = ?`),
+  backfillFindingPrograms: stmtRunner(`UPDATE findings SET program = COALESCE((SELECT COALESCE(s.program_name, s.target, '') FROM sessions s WHERE s.id = findings.session_id), '') WHERE COALESCE(program, '') = ''`),
   deleteFindings: stmtRunner(`DELETE FROM findings WHERE session_id = ?`),
   deleteFinding: stmtRunner(`DELETE FROM findings WHERE session_id = ? AND id = ?`),
   insertReport: stmtRunner(`INSERT INTO reports (session_id, slug, data, status) VALUES (?, ?, ?, ?)`),
@@ -241,6 +272,40 @@ function getFinding(sessionId, id) {
   const f = stmts.getFinding.get(sessionId, id);
   if (!f) return null;
   return { ...f, details: typeof f.details === 'string' ? JSON.parse(f.details || '{}') : f.details || {} };
+}
+
+/** Todos los hallazgos (todas las sesiones) con contexto de programa resuelto. */
+function getAllFindings() {
+  return stmts.getAllFindings.all().map(f => {
+    const details = typeof f.details === 'string' ? JSON.parse(f.details || '{}') : f.details || {};
+    const program = f.program || f.session_program || f.session_target || '';
+    return { ...f, details, program };
+  });
+}
+
+const TRIAGE_STATUS = ['nuevo', 'confirmado', 'falso-positivo', 'reportado', 'descartado'];
+const TRIAGE_SEV = ['critical', 'high', 'medium', 'low', 'info'];
+
+/** Triaje global por id: estado + severidad + nota (persiste en columna y details). */
+function triageFinding(id, { status, severity, note } = {}) {
+  const f = stmts.getFindingById.get(Number(id));
+  if (!f) return { ok: false, error: 'hallazgo no encontrado' };
+  if (status !== undefined && !TRIAGE_STATUS.includes(status)) return { ok: false, error: `status inválido (${TRIAGE_STATUS.join('/')})` };
+  if (severity !== undefined && !TRIAGE_SEV.includes(severity)) return { ok: false, error: `severity inválida (${TRIAGE_SEV.join('/')})` };
+  const details = typeof f.details === 'string' ? JSON.parse(f.details || '{}') : f.details || {};
+  details.triage = {
+    ...(details.triage || {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(note !== undefined ? { note: String(note).slice(0, 500) } : {}),
+    at: new Date().toISOString(),
+  };
+  const res = stmts.updateFindingTriage.run(
+    status !== undefined ? status : (f.status || 'nuevo'),
+    severity !== undefined ? severity : (f.severity || 'info'),
+    JSON.stringify(details),
+    Number(id)
+  );
+  return { ok: (res.changes || 0) > 0, id: Number(id), status: status !== undefined ? status : f.status, severity: severity !== undefined ? severity : f.severity };
 }
 
 /** Evidencia de un hallazgo dentro del directorio de evidencias de la suite. */
@@ -323,6 +388,8 @@ module.exports = {
   updateFindingDetails,
   getFindings,
   getFinding,
+  getAllFindings,
+  triageFinding,
   removeFinding,
   clearFindings,
   evidenceFilesOf,

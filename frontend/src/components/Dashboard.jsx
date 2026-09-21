@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import OsintFindingsCard from './OsintFindingsCard';
 
 // Indicador permanente de la ruta de SALIDA del tráfico de la suite:
 // directo / Tor / proxy del sistema / proxy externo (Burp). El backend
@@ -73,15 +74,19 @@ const SEVERITY_COLORS = {
 
 const SEVERITY_LABELS = { critical: 'Crítico', high: 'Alto', medium: 'Medio', low: 'Bajo', info: 'Info' };
 
-export default function Dashboard({ api, status, health, go }) {
+export default function Dashboard({ api, status, health, go, sendToRepeater }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api('/dashboard/stats')
-      .then(setStats)
+    let alive = true;
+    const load = () => api('/dashboard/stats')
+      .then((s) => { if (alive) setStats(s); })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (alive) setLoading(false); });
+    load();
+    const t = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(t); };
   }, [api]);
 
   if (loading) {
@@ -111,7 +116,7 @@ export default function Dashboard({ api, status, health, go }) {
     return `${sec}s`;
   };
 
-  const maxSeverity = Math.max(...Object.values(findingsBySeverity), 1);
+  const maxSeverity = Math.max(...Object.values(findingsBySeverity || {}), 1);
 
   return (
     <div>
@@ -182,6 +187,8 @@ export default function Dashboard({ api, status, health, go }) {
           <span className="muted" style={{ fontSize: 11 }}>Sin hallazgos registrados</span>
         )}
       </div>
+
+      <OsintFindingsCard api={api} go={go} sendToRepeater={sendToRepeater} />
 
       <div className="card">
         <h3>Actividad reciente</h3>
