@@ -843,7 +843,7 @@ router.get('/params/wordlists', (req, res) => {
 });
 
 router.post('/params/hunt', async (req, res) => {
-  const { url, wordlist, limit, maxParams, useHistory, mode } = req.body || {};
+  const { url, wordlist, limit, maxParams, useHistory, mode, headers } = req.body || {};
   if (typeof url !== 'string' || !url.trim()) return res.status(400).json({ ok: false, error: 'url requerida' });
   const session = getSession();
   try {
@@ -859,7 +859,7 @@ router.post('/params/hunt', async (req, res) => {
         if (mode === 'form') bodyParams = proxyMod.historyBodyParams({ host: hostname, limit: 60 });
       } catch { historyParams = []; bodyParams = []; }
     }
-    const r = await paramHunter.hunt({ url, wordlist, limit: Number(limit) || 25, maxParams: Number(maxParams) || 40, scope: session.scope, historyParams, mode, bodyParams });
+    const r = await paramHunter.hunt({ url, wordlist, limit: Number(limit) || 25, maxParams: Number(maxParams) || 40, scope: session.scope, historyParams, mode, bodyParams, headers });
     if (!r.ok) return res.json({ ok: false, error: r.error });
     // sqli_error = evidencia objetiva (error de BD con firma): hallazgo automático
     // (reflected/param_exists siguen siendo manuales; redirect_param se valida a mano)
