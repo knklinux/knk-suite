@@ -26,7 +26,10 @@ function fetch(url, opts = {}) {
       try { await netMod.waitForSlot(); } catch { /* sigue */ }
       const host = parsed.hostname;
       try {
-        if (netMod.isInternalHost(host) || (await netMod.resolvesInternal(host))) {
+        // resolvesInternal puede no existir en despliegues con net.js viejo:
+        // en ese caso el literal-IP sigue bloqueado por isInternalHost.
+        const resolvesInternal = netMod.resolvesInternal || (async () => false);
+        if (netMod.isInternalHost(host) || (await resolvesInternal(host))) {
           return reject(new Error('Bloqueado anti-SSRF: host interno ' + host));
         }
       } catch (e) { return reject(e); }

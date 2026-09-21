@@ -5,6 +5,8 @@ const https = require('https');
 const tls = require('tls');
 const dns = require('dns');
 const ipMod = require('net');
+const { revisarOpciones } = require('./opciones');
+let _etiquetarMe = null; // decorador PG-06 (carga perezosa: identidad.js importa este módulo)
 // V13: detector pasivo de contenido cross-tenant (carga perezosa, nunca bloquea)
 let _v13Escanear = () => {};
 try { _v13Escanear = require("./v13-detector").escanear; } catch {}
@@ -53,12 +55,38 @@ function _connectTunnel(proxyUrl, targetHost, targetPort) {
   });
 }
 
+// ── Avisos de configuración ─────────────────────────────────────────────────
+// Un setter que descarta en silencio lo que le piden es indistinguible de un
+// setter que sí lo aplicó: por eso estas llamadas avisan UNA vez por
+// situación+valor (repetir la misma línea en cada petición es no avisar).
+const _avisosConfig = new Set();
+function _avisarConfig(clave, mensaje, avisar = console.warn) {
+  if (_avisosConfig.has(clave)) return false;
+  _avisosConfig.add(clave);
+  if (typeof avisar === 'function') avisar(`[net] ⚠️ ${mensaje}`);
+  return true;
+}
+function _reiniciarAvisosConfig() { _avisosConfig.clear(); }
+const _tipo = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+
 // ── UA global configurable ──────────────────────────
 let _customUA = null;
 function setUA(ua, { force = false } = {}) {
-  if (_uaLocked && !force) return _customUA;
+  if (_uaLocked && !force) {
+    // El UA está fijado por integridad de identidad: el llamante pide otro y se
+    // queda con el anterior. Antes esto era mudo por completo.
+    _avisarConfig(`ua-bloqueado|${ua}`,
+      `setUA() ignorado: la identidad está FIJADA por lockUA(). Se conserva «${String(getUA()).slice(0, 60)}». ` +
+      'Un auxiliar no puede cambiar el UA de la sesión; si de verdad hace falta, setUA(ua, { force: true }).');
+    return _customUA;
+  }
   const value = String(ua || '').trim();
-  if (!value || value.length > 240 || /[\r\n\x00-\x1f\x7f]/.test(value)) return _customUA;
+  if (!value || value.length > 240 || /[\r\n\x00-\x1f\x7f]/.test(value)) {
+    _avisarConfig(`ua-invalido|${value.length}`,
+      `setUA() ignorado: ${value ? 'el UA pedido no es válido (caracteres de control o más de 240 caracteres)' : 'el UA pedido está vacío'}. ` +
+      `Se conserva «${String(getUA()).slice(0, 60)}».`);
+    return _customUA;
+  }
   if (value) _customUA = value;
   if (force) _uaLocked = true;
   return _customUA;
@@ -70,18 +98,39 @@ function getUA() { return _customUA || DEFAULT_UA; }
 // iniciar varias a la vez ni saltarse el intervalo configurado. No se usa
 // jitter ni camuflaje: el objetivo es un ritmo conservador, reproducible y
 // conforme a la política del programa.
+const SUELO_MS = 800; // suelo anti-DoS: por debajo, la suite va más rápido de lo que se permite
 let _minDelayMs = 1500; // mínimo entre inicios de petición (anti-DoS)
 let _maxBatch = 30; // máximo de peticiones por ventana de 60s
 let _uaLocked = false; // la sesión puede fijar el UA; módulos auxiliares no lo reemplazan
 function setRateLimit(delayMs) {
   const value = Number(delayMs);
-  if (Number.isFinite(value)) _minDelayMs = Math.max(800, Math.floor(value));
+  if (!Number.isFinite(value)) {
+    // Un `rateLimit: '2s'` es un error de tipo del llamante, no una petición de
+    // 1500 ms: antes se ignoraba sin decir nada.
+    _avisarConfig(`rate-no-num|${String(delayMs)}`,
+      `setRateLimit() ignorado: «${String(delayMs)}» no es un número. Se conserva ${_minDelayMs} ms.`);
+    return _minDelayMs;
+  }
+  if (value < SUELO_MS) {
+    // Se respeta el suelo, pero que no sea en silencio: el llamante cree haber
+    // pedido un ritmo más rápido del que la suite va a usar de verdad.
+    _avisarConfig(`rate-suelo|${value}`,
+      `setRateLimit(${value}) ELEVADO al suelo anti-DoS de ${SUELO_MS} ms (la suite no irá a la velocidad pedida).`);
+  }
+  _minDelayMs = Math.max(SUELO_MS, Math.floor(value));
+  return _minDelayMs;
 }
 // Se conserva por compatibilidad con la API existente; ya no añade jitter.
 function setStealth(on) { void on; }
 function setMaxBatch(n) {
   const value = Number(n);
-  if (Number.isFinite(value)) _maxBatch = Math.max(1, Math.floor(value));
+  if (!Number.isFinite(value)) {
+    _avisarConfig(`batch-no-num|${String(n)}`, `setMaxBatch() ignorado: «${String(n)}» no es un número. Se conserva ${_maxBatch}.`);
+    return _maxBatch;
+  }
+  if (value < 1) _avisarConfig(`batch-suelo|${value}`, `setMaxBatch(${value}) elevado a 1 (no hay ventanas de 0 peticiones).`);
+  _maxBatch = Math.max(1, Math.floor(value));
+  return _maxBatch;
 }
 function getRateLimit() { return _minDelayMs; }
 function lockUA() { _uaLocked = true; }
@@ -126,7 +175,32 @@ function _throttle() {
 // para el laboratorio local si se quiere).
 let _scope = [];
 let _outOfScope = [];
-function setScope(scope) { _scope = Array.isArray(scope) ? scope : []; }
+/**
+ * Fija el scope. NO acepta cualquier cosa: si lo que llega no es un array, el
+ * scope se QUEDA COMO ESTABA y avisa.
+ *
+ * Antes se convertía en `[]` en silencio, y `[]` no significa "nada permitido"
+ * sino "sin filtro": sin scope, `hostAllowed` deja pasar cualquier host público.
+ * O sea que un error de tipo ENSANCHABA el permiso — lo contrario de lo que se
+ * espera de un control de seguridad. Medido: con
+ * `setScope(['api.example.com'])`, `inScope('evil.com')` es `false`; con
+ * `setScope('api.example.com')` (un string por error) pasa a `true`.
+ *
+ * Para vaciarlo de verdad hay que pedirlo: `setScope([])`.
+ * Devuelve `true` si aplicó el scope nuevo.
+ */
+function setScope(scope) {
+  console.log('[TRACE setScope]', JSON.stringify(scope), new Error('trace').stack.split('\n').slice(2, 5).join(' | '));
+  if (!Array.isArray(scope)) {
+    _avisarConfig(`scope-tipo|${_tipo(scope)}`,
+      `setScope() RECHAZADO: llegó ${_tipo(scope)} («${String(scope).slice(0, 80)}»), no un array. ` +
+      `Se CONSERVA el scope actual (${_scope.length} entrada(s)); para vaciarlo: setScope([]).`);
+    return false;
+  }
+  _scope = scope;
+  return true;
+}
+function getScope() { return _scope.slice(); }
 
 function ip4ToInt(ip) {
   const o = String(ip || '').split('.').map(Number);
@@ -207,7 +281,21 @@ async function hostAllowed(host) {
   return !(await resolvesInternal(h));
 }
 
-function setOutOfScope(scope) { _outOfScope = Array.isArray(scope) ? scope.filter(Boolean) : []; }
+/**
+ * Lista out-of-scope. Mismo criterio fail-safe que `setScope`: un valor que no
+ * es array NO vacía la lista. Vaciar out-of-scope también ENSANCHA —esa lista
+ * domina sobre el scope—, así que tampoco puede pasar por accidente.
+ */
+function setOutOfScope(scope) {
+  if (!Array.isArray(scope)) {
+    _avisarConfig(`oos-tipo|${_tipo(scope)}`,
+      `setOutOfScope() RECHAZADO: llegó ${_tipo(scope)}, no un array. Se CONSERVA la lista actual (${_outOfScope.length} entrada(s)); para vaciarla: setOutOfScope([]).`);
+    return false;
+  }
+  _outOfScope = scope.filter(Boolean);
+  return true;
+}
+function getOutOfScope() { return _outOfScope.slice(); }
 function matchesRule(host, rule) {
   const raw = String(rule || '').trim().toLowerCase();
   const wildcard = raw.startsWith('*.');
@@ -248,6 +336,13 @@ async function isSafePublicHost(host) {
     return addresses.length > 0 && addresses.every(record => !isInternalHost(record.address));
   } catch { return false; }
 }
+
+// Directorio de evidencia. TENÍA que estar declarado: el fichero es 'use strict'
+// y sin `let` la asignación lanzaba ReferenceError, así que setEvidenciaDir() y
+// saveEvidence() NUNCA funcionaron (nadie lo notó porque las llamadas iban dentro
+// de try/catch). Por defecto, la evidencia HTTP del repo.
+let _evidenciaDir = process.env.KNK_EVIDENCIA_DIR
+  || path.join(__dirname, '..', '..', 'evidencia-poc', 'http');
 function setEvidenciaDir(dir) { _evidenciaDir = path.resolve(String(dir)); fs.mkdirSync(_evidenciaDir, { recursive: true }); }
 function getEvidenciaDir() { return _evidenciaDir; }
 function saveEvidence(name, data) {
@@ -258,6 +353,230 @@ function saveEvidence(name, data) {
   const file = path.join(_evidenciaDir, `${Date.now()}_${safe}`);
   fs.writeFileSync(file, buffer);
   return file;
+}
+
+// ── Cabeceras efectivas salientes ───────────────────────────────────────────
+// Las capturas históricas guardaban status y cuerpo, nunca el request: el
+// registro de evidencia no reflejaba lo que realmente salía al cable (el UA
+// lleva el sufijo UA_SUFFIX pase lo que pase, y `Accept` se pisaba). Aquí se
+// conservan los últimos conjuntos REALES, con Cookie/Authorization redactados,
+// para poder auditar la huella de cliente sin adivinar y sin volcar secretos.
+const MAX_CABECERAS = 50;
+const _ultimasPeticiones = [];
+const CLAVES_SECRETAS = /^(cookie|authorization|proxy-authorization|x-knk-token|x-api-key)$/i;
+function _redactarCabeceras(h) {
+  const out = {};
+  for (const [k, v] of Object.entries(h || {})) out[k] = CLAVES_SECRETAS.test(k) ? '<redactado>' : String(v);
+  return out;
+}
+function ultimasPeticiones() { return _ultimasPeticiones.slice(); }
+function limpiarPeticiones() { _ultimasPeticiones.length = 0; }
+
+// Señales que un control de borde mira para saber si detrás hay un navegador.
+// AJUSTADO CON MEDICIÓN (captura de contraste huella-contraste.txt), no a ojo:
+//  · `te` salió de la lista: Firefox 155 NO manda TE: trailers (es de Chromium).
+//  · `upgrade-insecure-requests` es solo de NAVEGACIÓN: un fetch() no la manda.
+//  · `referer` no lo lleva una navegación top-level (sec-fetch-site: none).
+// Las que quedan se mandan siempre en ambos casos, así que su ausencia sí delata.
+const SENALES_NAVEGADOR = [
+  ['accept-encoding', 'un navegador siempre negocia compresión'],
+  ['sec-fetch-dest', 'Fetch Metadata: solo navegadores'],
+  ['sec-fetch-mode', 'Fetch Metadata: solo navegadores'],
+  ['sec-fetch-site', 'Fetch Metadata: solo navegadores'],
+  ['accept-language', 'negociación de idioma del navegador'],
+  ['priority', 'hint de prioridad (u=…)'],
+];
+// Firmas del cliente PROPIO. Aquí también se corrigió a ojo por medición:
+// `accept: */*` y `connection: keep-alive` NO discriminan (Firefox manda `*/*`
+// en el fetch() de una página y `keep-alive` en HTTP/1.1). Lo único que
+// delata a este cliente es su UA auto-declarado: es identidad, no descuido.
+const SENALES_FIRMA_SINTETICA = [
+  ['user-agent', UA_SUFFIX, 'el UA se auto-declara knk-suite (identidad, no camuflaje)'],
+];
+
+/**
+ * Diagnóstico de huella: qué delata que la petición no viene de un navegador.
+ * Puro y reutilizable para las DOS partes de una captura de contraste (el
+ * cliente sintético y el navegador real).
+ */
+function diagnosticoHuella(headers = {}, { metodo = 'GET', orden = null } = {}) {
+  const bajo = {};
+  for (const [k, v] of Object.entries(headers || {})) bajo[String(k).toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v);
+  const faltan = [];
+  for (const [clave, motivo] of SENALES_NAVEGADOR) {
+    if (!bajo[clave]) faltan.push({ cabecera: clave, motivo });
+  }
+  const navegacionTop = bajo['sec-fetch-dest'] === 'document' && bajo['sec-fetch-site'] === 'none';
+  if (navegacionTop) {
+    // Una navegación de nivel superior pide HTTPS y no lleva Referer.
+    if (!bajo['upgrade-insecure-requests']) {
+      faltan.push({ cabecera: 'upgrade-insecure-requests', motivo: 'una navegación de navegador pide HTTPS' });
+    }
+  } else if (!bajo['referer']) {
+    faltan.push({ cabecera: 'referer', motivo: 'procedencia de la petición' });
+  }
+  const firmas = [];
+  for (const [clave, valor, motivo] of SENALES_FIRMA_SINTETICA) {
+    if (String(bajo[clave] || '').includes(valor)) firmas.push({ cabecera: clave, motivo });
+  }
+  if (String(metodo).toUpperCase() === 'POST' && !bajo['origin']) {
+    faltan.push({ cabecera: 'origin', motivo: 'un POST de navegador lleva Origin' });
+  }
+  const ua = bajo['user-agent'] || '';
+  const pareceNavegador = faltan.length === 0 && firmas.length === 0;
+  return {
+    metodo: String(metodo).toUpperCase(),
+    headerOrder: orden || null,
+    faltan,
+    firmas,
+    pareceNavegador,
+    resumen: pareceNavegador
+      ? 'indistinguible de un navegador por cabeceras'
+      : `${faltan.length} señal(es) de navegador ausente(s), ${firmas.length} firma(s) de cliente sintético`,
+    ua,
+  };
+}
+
+// ── Aviso de huella de automatizado, en el momento ──────────────────────────
+// El diagnóstico de arriba se escribe en la evidencia, y la evidencia se vuelca
+// AL SALIR: durante la pasada nadie ve que la petición se está identificando
+// sola. Estas tres señales son las más baratas de mirar para un control de borde
+// y las que ningún informe registraba, así que se avisan por el log en el
+// instante en que la petición SALE (no cuando se pretende: si el proxy falla
+// antes, no hay petición que avisar).
+//
+// `origin` se exige SOLO en métodos con cuerpo: un GET de navegador tampoco
+// manda Origin, y avisar en cada GET convertiría el aviso en papel pintado —
+// un aviso que siempre suena es un aviso que nadie lee.
+const SENALES_AVISO = ['accept-encoding', 'sec-fetch-*', 'origin (solo con cuerpo)'];
+
+/** Señales de navegador ausentes que dejan constancia. Pura y testeable. */
+function senalesNavegadorAusentes(headers = {}, { metodo = 'GET' } = {}) {
+  const bajo = {};
+  for (const [k, v] of Object.entries(headers || {})) bajo[String(k).toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v);
+  const faltan = [];
+  if (!bajo['accept-encoding']) faltan.push('accept-encoding');
+  if (!bajo['sec-fetch-dest'] && !bajo['sec-fetch-mode'] && !bajo['sec-fetch-site']) faltan.push('sec-fetch-*');
+  const conCuerpo = /^(POST|PUT|PATCH|DELETE)$/i.test(String(metodo));
+  if (conCuerpo && !bajo['origin']) faltan.push('origin');
+  return faltan;
+}
+
+/**
+ * Evalúa el aviso para una petición concreta.
+ * `objetivoReal` = host público (no interno): un eco en 127.0.0.1 —capturas de
+ * contraste, tests, laboratorio— mide la huella a propósito y no debe llenar el
+ * log de avisos que no van a ningún objetivo.
+ */
+function evaluarHuellaAutomatizada({ host, metodo = 'GET', headers = {} } = {}) {
+  const h = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  const objetivoReal = !!h && !isInternalHost(h);
+  const faltan = senalesNavegadorAusentes(headers, { metodo });
+  const aviso = objetivoReal && faltan.length
+    ? `huella de automatizado hacia ${h} (${String(metodo).toUpperCase()}): falta ${faltan.join(', ')} — un navegador real manda estas señales siempre, así que la petición se identifica sola como cliente sintético`
+    : null;
+  return { host: h, objetivoReal, faltan, aviso };
+}
+
+// Un aviso por combinación host+método+señales ausentes: repetir la misma línea
+// 40 veces no informa de nada y entierra las demás. El detalle de CADA petición
+// queda en el registro, y el total se resume al salir (engancharVolcadoAutomatico).
+const _avisosHuellaVistos = new Set();
+function _avisarHuella(clave) {
+  if (_avisosHuellaVistos.has(clave)) return false;
+  _avisosHuellaVistos.add(clave);
+  return true;
+}
+function avisosHuellaVistos() { return _avisosHuellaVistos.size; }
+
+/** Ordena las cabeceras para leerlas: primero las que importan a la huella. */
+function _ordenarParaLectura(h) {
+  const prioridad = ['User-Agent', 'Accept', 'Accept-Encoding', 'Accept-Language', 'Origin', 'Referer', 'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'Content-Type', 'Content-Length', 'Connection'];
+  return Object.keys(h || {}).sort((a, b) => {
+    const ia = prioridad.indexOf(a), ib = prioridad.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+}
+
+/**
+ * Vuelca a EVIDENCIA las cabeceras efectivas de las últimas peticiones.
+ * Escribe `<archivo>` (legible) y `<archivo>.json` (crudo). Devuelve sus rutas.
+ */
+function volcarPeticiones(archivo, { titulo = 'Cabeceras efectivas salientes', n = MAX_CABECERAS } = {}) {
+  const destino = path.resolve(String(archivo));
+  fs.mkdirSync(path.dirname(destino), { recursive: true });
+  const registros = _ultimasPeticiones.slice(-Math.max(1, Number(n) || MAX_CABECERAS));
+  const L = [];
+  L.push(`# ${titulo}`);
+  L.push(`# generado: ${new Date().toISOString()}`);
+  L.push(`# peticiones registradas: ${_ultimasPeticiones.length} (volcadas: ${registros.length})`);
+  L.push('# Cookie/Authorization van redactados: son secretos y no aportan a la huella.');
+  L.push('');
+  if (!registros.length) L.push('(sin peticiones registradas por lib/net.js en este proceso)');
+  registros.forEach((r, i) => {
+    const huella = diagnosticoHuella(r.headers, { metodo: r.method, orden: r.headerOrder });
+    L.push(`## [${i + 1}] ${r.method} ${r.url} → ${r.status === null ? '(sin respuesta)' : r.status}`);
+    L.push(`   ts: ${r.ts}`);
+    L.push(`   huella: ${huella.resumen}`);
+    for (const f of huella.faltan) L.push(`     · falta ${f.cabecera} — ${f.motivo}`);
+    for (const f of huella.firmas) L.push(`     · firma ${f.cabecera} — ${f.motivo}`);
+    if (r.huellaIncompleta && r.huellaIncompleta.length) {
+      L.push(`     · AVISO: hacia objetivo real sin ${r.huellaIncompleta.join(', ')}`);
+    }
+    for (const k of _ordenarParaLectura(r.headers)) {
+      const v = String(r.headers[k]);
+      L.push(`   ${k}: ${v.length > 200 ? v.slice(0, 200) + '…' : v}`);
+    }
+    L.push('');
+  });
+  fs.writeFileSync(destino, L.join('\n'));
+  const jsonDestino = destino.replace(/\.txt$/i, '') + '.json';
+  fs.writeFileSync(jsonDestino, JSON.stringify({
+    titulo, generado: new Date().toISOString(),
+    total: _ultimasPeticiones.length,
+    peticiones: registros.map((r) => ({ ...r, huella: diagnosticoHuella(r.headers, { metodo: r.method, orden: r.headerOrder }) })),
+  }, null, 2));
+  return { txt: destino, json: jsonDestino, n: registros.length };
+}
+
+// ── Volcado automático al terminar ──────────────────────────────────────────
+// Todo driver A/B que use lib/net.js deja sus cabeceras efectivas en evidencia
+// SIN tener que acordarse: se engancha en la primera petición y escribe una vez
+// al salir. Se desactiva con KNK_SIN_VOLCADO=1 y nunca escribe en procesos de
+// test (evita ruido de evidencia en las baterías).
+//
+// La detección por nombre tiene que cubrir TAMBIÉN al runner, no solo a los
+// `*.test.js`: `npm test` ejecuta `backend/test.js`, y con el patrón anterior
+// cada corrida dejaba en evidencia-poc/http un volcado con tráfico de pruebas
+// que se lee igual que una captura real de driver.
+function _esProcesoDeTest(argv1) {
+  const p = String(argv1 || '').replace(/\\/g, '/');
+  if (!p) return false;
+  const base = path.basename(p);
+  return /\.test\.[cm]?js$/i.test(base) || /^test\.js$/i.test(base) || /(^|\/)__tests__\//.test(p);
+}
+let _volcadoAutoActivo = process.env.KNK_SIN_VOLCADO !== '1' && !_esProcesoDeTest(process.argv[1]);
+let _volcadoAutoEnganchado = false;
+function setVolcadoAutomatico(on) { _volcadoAutoActivo = !!on; }
+function engancharVolcadoAutomatico() {
+  if (_volcadoAutoEnganchado || !_volcadoAutoActivo) return false;
+  _volcadoAutoEnganchado = true;
+  const driver = path.basename(process.argv[1] || 'proceso', '.js');
+  process.on('exit', () => {
+    try {
+      if (!_ultimasPeticiones.length) return;
+      const sello = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const r = volcarPeticiones(path.join(_evidenciaDir, `peticiones-${driver}-${sello}.txt`), {
+        titulo: `Cabeceras efectivas salientes — ${driver}`,
+      });
+      // El total de peticiones que se identificaron solas, para que la pasada
+      // cierre con la cuenta y no haya que abrir el volcado para saberlo.
+      const conHuellaIncompleta = _ultimasPeticiones.filter((p) => p.huellaIncompleta && p.huellaIncompleta.length).length;
+      console.log(`[net] cabeceras efectivas volcadas → ${path.basename(r.txt)}` +
+        (conHuellaIncompleta ? ` · ⚠️ ${conHuellaIncompleta}/${_ultimasPeticiones.length} sin huella de navegador` : ''));
+    } catch { /* la evidencia nunca debe tumbar el driver al salir */ }
+  });
+  return true;
 }
 
 // ── IP pública (verificación VPN) ───────────────────
@@ -295,7 +614,12 @@ async function checkPublicIP(force = false) {
 }
 
 // ── HTTP fetch ──────────────────────────────────────
+// Claves que `fetch` LEE de verdad. Cualquier otra que llegue se avisa: pasar
+// `{ signal }` o `{ redirect: 'manual' }` no cancela ni cambia nada, y el
+// llamante se queda creyendo que sí (mismo patrón que `puerto` vs `port`).
+const CLAVES_FETCH = ['method', 'headers', 'body', 'timeoutMs', 'maxRedirects'];
 function fetch(url, opts = {}) {
+  revisarOpciones(opts, CLAVES_FETCH, 'net.fetch');
   const { method = 'GET', headers = {}, body = null, timeoutMs = 15000, maxRedirects = 5 } = opts;
   let parsedUrl;
   try { parsedUrl = new URL(url); }
@@ -318,7 +642,14 @@ function fetch(url, opts = {}) {
       const fullUA = `${getUA()} ${UA_SUFFIX}`;
       // El UA de la sesión es inmutable para callers auxiliares: una fase no
       // puede ocultar o sustituir la identidad configurada en el OPPLAN.
-      const reqHeaders = { ...headers, Accept: '*/*', 'User-Agent': fullUA };
+      // El `Accept` SÍ lo manda el llamante cuando lo pide: un endpoint SSE
+      // necesita `text/event-stream`.
+      //
+      // EL ORDEN DE ESTAS TRES PIEZAS ES LA CORRECCIÓN DEL BUG: `Accept` va
+      // antes del spread (gana el llamante) y `User-Agent` va después (la
+      // identidad queda bloqueada). Con el spread primero, el `Accept` del
+      // llamante se descartaba en silencio — un endpoint SSE negociando `*/*`.
+      const reqHeaders = { Accept: '*/*', ...headers, 'User-Agent': fullUA };
       let payload = body;
       if (body && typeof body !== 'string') {
         payload = JSON.stringify(body);
@@ -343,7 +674,32 @@ function fetch(url, opts = {}) {
         return resolve({ ok: false, status: 0, headers: {}, text: '', json: () => null, error: 'proxy: ' + e.message });
       }
 
+      // Aviso EN EL MOMENTO, ya con la petición a punto de salir y las
+      // cabeceras definitivas: el volcado de evidencia se escribe al salir del
+      // proceso, así que durante la pasada nadie ve que se identifica sola.
+      const huella = evaluarHuellaAutomatizada({ host: u.hostname, metodo: method, headers: reqHeaders });
+      if (huella.aviso) {
+        const clave = `${huella.host}|${String(method).toUpperCase()}|${huella.faltan.join(',')}`;
+        if (_avisarHuella(clave)) console.warn(`[net] ⚠️ ${huella.aviso}`);
+      }
+
+      // Se registra la petición TAL CUAL sale al cable (cabeceras ya resueltas,
+      // secretos redactados) para que la evidencia pueda auditarla de verdad.
+      const registro = {
+        ts: new Date().toISOString(), method, url: String(url).slice(0, 300),
+        status: null, headers: _redactarCabeceras(reqHeaders),
+        headerOrder: Object.keys(reqHeaders),
+        // Solo se anota cuando el aviso procede: en un objetivo real y con
+        // señales ausentes. Así la evidencia distingue "petición de driver
+        // contra el programa" de "petición de laboratorio en loopback".
+        huellaIncompleta: huella.aviso ? huella.faltan : [],
+      };
+      _ultimasPeticiones.push(registro);
+      if (_ultimasPeticiones.length > MAX_CABECERAS) _ultimasPeticiones.shift();
+      engancharVolcadoAutomatico();
+
       const req = modFinal.request(u, requestOptions, (res) => {
+        registro.status = res.statusCode;
         if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && maxRedirects > 0) {
           res.resume();
           let redirected;
@@ -369,18 +725,29 @@ function fetch(url, opts = {}) {
         let data = '';
         res.setEncoding('utf8');
         res.on('data', (c) => (data += c));
-        res.on('end', () => resolve({
-          ok: res.statusCode >= 200 && res.statusCode < 300,
-          status: res.statusCode,
-          headers: res.headers,
-          text: data,
-          json: () => { try { return JSON.parse(data); } catch { return null; } },
-        }));
+        res.on('end', () => {
+          // PG-06 en runtime: /backend-api/me sale etiquetada (cuentaId/deviceId).
+          // Carga perezosa y no-lanzadora: si el módulo no está, la respuesta
+          // sigue intacta — el etiquetado jamás rompe el fetch.
+          if (!_etiquetarMe) { try { _etiquetarMe = require('./me-decorador').etiquetarRespuestaMe; } catch {} }
+          let r = {
+            ok: res.statusCode >= 200 && res.statusCode < 300,
+            status: res.statusCode,
+            headers: res.headers,
+            text: data,
+            json: () => { try { return JSON.parse(data); } catch { return null; } },
+          };
+          try {
+            const extras = String(process.env.KNK_ME_HOSTS_EXTRA || '').split(',').filter(Boolean);
+            r = _etiquetarMe(r, { url: String(url), hostsExtra: extras });
+          } catch {}
+          resolve(r);
+        });
         // V13: escaneo pasivo del cuerpo — nunca altera la respuesta
         try { _v13Escanear(data, method + " " + url); } catch {}
       });
-      req.on('error', (e) => resolve({ ok: false, status: 0, headers: {}, text: '', json: () => null, error: e.message }));
-      req.on('timeout', () => { req.destroy(); resolve({ ok: false, status: 0, headers: {}, text: '', json: () => null, error: 'timeout' }); });
+      req.on('error', (e) => { registro.status = 0; resolve({ ok: false, status: 0, headers: {}, text: '', json: () => null, error: e.message }); });
+      req.on('timeout', () => { registro.status = 0; req.destroy(); resolve({ ok: false, status: 0, headers: {}, text: '', json: () => null, error: 'timeout' }); });
       if (payload) req.write(payload);
       req.end();
     });
@@ -389,9 +756,6 @@ function fetch(url, opts = {}) {
 async function getJson(url, opts = {}) { return (await fetch(url, opts)).json(); }
 async function getText(url, opts = {}) { const result = await fetch(url, opts); return result.ok ? result.text : ''; }
 function qs(value) { return encodeURIComponent(value); }
-
-async function getJson(url, opts = {}) { const r = await fetch(url, opts); return r.json(); }
-async function getText(url, opts = {}) { const r = await fetch(url, opts); return r.ok ? r.text : ''; }
 
 function normalizeHost(input) {
   let h = String(input || '').trim().toLowerCase();
@@ -405,10 +769,15 @@ function qs(v) { return encodeURIComponent(v); }
 
 module.exports = {
   fetch, getJson, getText, normalizeHost, qs,
-  setUA, getUA, lockUA, unlockUA, getRateLimit, setRateLimit, setStealth, setMaxBatch, getMaxBatch, waitForSlot, setScope, inScope, hostAllowed,
-  setProxy, getProxy, isSafePublicHost, setOutOfScope,
+  setUA, getUA, lockUA, unlockUA, getRateLimit, setRateLimit, setStealth, setMaxBatch, getMaxBatch, waitForSlot,
+  setScope, getScope, inScope, hostAllowed, resolvesInternal,
+  setProxy, getProxy, isSafePublicHost, setOutOfScope, getOutOfScope,
   isInternalHost, isInternalIPv4, isInternalIPv6,
   checkPublicIP, getCachedPublicIP,
   setEvidenciaDir, getEvidenciaDir, saveEvidence,
+  ultimasPeticiones, limpiarPeticiones,
+  diagnosticoHuella, volcarPeticiones, setVolcadoAutomatico, engancharVolcadoAutomatico,
+  senalesNavegadorAusentes, evaluarHuellaAutomatizada, avisosHuellaVistos, SENALES_AVISO,
+  _reiniciarAvisosConfig, _avisarConfig, CLAVES_FETCH, SUELO_MS,
   DEFAULT_UA, UA_SUFFIX,
 };
