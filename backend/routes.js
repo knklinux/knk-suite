@@ -473,7 +473,7 @@ router.post('/llm/chat', async (req, res) => {
 router.get('/status', async (req, res) => {
   const s = getSession();
   const llm = await llmMod.status().catch(() => ({ up: false, model: null }));
-  res.json({ ok: true, up: llm.up, checkedAt: new Date().toISOString(), session: { target: s.target, scope: s.scope, opplan: s.opplan?.nombre ? { nombre: s.opplan.nombre, status: s.opplan.status } : null, findings: db.getFindings(s.id).length, phases: s.phases }, ollama: { up: llm.up, model: llm.model, models: llm.models || [] } });
+  res.json({ ok: true, up: llm.up, checkedAt: new Date().toISOString(), session: { target: s.target, scope: s.scope, program: s.program_name || null, opplan: s.opplan?.nombre ? { nombre: s.opplan.nombre, status: s.opplan.status } : null, findings: db.getFindings(s.id).length, phases: s.phases }, ollama: { up: llm.up, model: llm.model, models: llm.models || [] } });
 });
 router.get('/session', (req, res) => { const s = getSession(); res.json({ ...s, findings: db.getFindings(s.id) }); });
 router.get('/findings', (req, res) => {
@@ -490,6 +490,20 @@ router.post('/findings/:id/triage', (req, res) => {
   const r = db.triageFinding(req.params.id, { status: b.status, severity: b.severity, note: b.note });
   if (!r.ok) return res.status(r.error === 'hallazgo no encontrado' ? 404 : 400).json(r);
   res.json(r);
+});
+
+// ── Cookie-jar: sesiones del operador (caza autenticada sin pegar secretos)
+// La API nunca devuelve valores de cookies, solo inventario.
+const cookieJar = require('./lib/cookie-jar');
+router.get('/session/cookies', (req, res) => res.json({ ok: true, hosts: cookieJar.hosts() }));
+router.post('/session/cookies', (req, res) => {
+  const b = req.body || {};
+  res.json(cookieJar.set(b.host, b.cookie));
+});
+router.delete('/session/cookies/:host', (req, res) => res.json(cookieJar.remove(req.params.host)));
+router.post('/session/cookies/import-firefox', async (req, res) => {
+  const b = req.body || {};
+  res.json(await cookieJar.importFirefox(b.profile, b.hosts));
 });
 
 // ── Borrador de reporte desde Hallazgos filtrados ───────────────────────────

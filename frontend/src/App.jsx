@@ -167,6 +167,7 @@ export default function App() {
         <div className="status">
           <span className="st-line"><span className={`st-dot ${kali?.status === 'RUNTIME_READY' ? 'on' : 'off'}`} /> Kali: {kali?.status || '…'}</span>
           <span className="st-line"><span className={`st-dot ${llmUp ? 'on' : 'off'}`} /> LLM: {llmUp ? shortModel(llmModel) : 'OFF'}</span>
+          <span className="st-line"><span className="st-dot idle" /> {status.session?.program ? `🎯 ${String(status.session.program).slice(0, 34)}` : 'sin programa (aplica un preset en Targets)'} </span>
           <span className="st-line"><span className="st-dot idle" /> {status.session?.target || 'sin target'}</span>
         </div>
       </aside>

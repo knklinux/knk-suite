@@ -249,6 +249,14 @@ async function hunt({ url, wordlist = 'all', limit = 25, timeoutMs = 8000, maxPa
   }
   const FORM_HEADERS = { 'Content-Type': 'application/x-www-form-urlencoded', ...extraHeaders };
   const GET_HEADERS = { ...extraHeaders };
+  // Cookie-jar del operador si no se pasó Cookie explícita (caza autenticada).
+  try {
+    const hasCookie = Object.keys(GET_HEADERS).some((k) => k.toLowerCase() === 'cookie');
+    if (!hasCookie) {
+      const jarCookie = require('./cookie-jar').get(u.hostname);
+      if (jarCookie) { GET_HEADERS.cookie = jarCookie; FORM_HEADERS.cookie = jarCookie; }
+    }
+  } catch {}
   const base = isForm
     ? await net.fetch(u.toString(), { method: 'POST', headers: FORM_HEADERS, body: '', timeoutMs, maxRedirects: 0 })
     : await net.fetch(u.toString(), { headers: GET_HEADERS, timeoutMs, maxRedirects: 0 });

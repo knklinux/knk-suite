@@ -72,6 +72,30 @@ async function talk({ prompt, mode, model, sessionId, useVault = true, useMemory
   const route = ROUTES[routeKey] || ROUTES.chat;
   const selectedModel = model || undefined; // sin modelo explícito: llm elige por rol con fallback
 
+  // Auto-datos (igual que el stream): snapshot + tools por palabra clave,
+  // vía lazy-require para no crear ciclo con assistant-tools.
+  let autoBlock = '';
+  if (sessionId && prompt) {
+    try {
+      const tools = require('./assistant-tools');
+      const parts = [];
+      parts.push('SNAPSHOT DE DATOS REALES (en vivo):\n' + tools.sessionSnapshot(sessionId));
+      const p = String(prompt);
+      const wants = [];
+      if (/hallazgo|finding|vulnerab|reportab|triaje|medium|critical|high/i.test(p)) wants.push(['get_findings', { limit: 10 }]);
+      if (/fase|pipeline|avance|progreso|plan\b|opplan|siguiente paso|por d[oó]nde/i.test(p)) wants.push(['get_phase_status', {}]);
+      if (/proxy|historial|petici|tr[aá]fico|intercept/i.test(p)) wants.push(['get_proxy_history', { limit: 10 }]);
+      if (/programa|scope|alcance|objetivo|bounty/i.test(p)) wants.push(['get_phase_status', {}]);
+      const seen = new Set();
+      for (const [name, args] of wants) {
+        if (seen.has(name) || parts.length >= 3) continue;
+        seen.add(name);
+        try {       parts.push(`[DATO EN VIVO — ${name}]\n${JSON.stringify(tools.TOOLS[name].run(sessionId, args)).slice(0, 1600)}`); } catch {}
+      }
+      autoBlock = '\n\nDatos ya resueltos (úsalos y cítalos):\n' + parts.join('\n');
+    } catch {}
+  }
+
   let context = '';
   let sources = [];
   if (useVault && prompt) {
@@ -86,6 +110,7 @@ async function talk({ prompt, mode, model, sessionId, useVault = true, useMemory
     route.system,
     context ? `Contexto del cerebro local (bóveda Obsidian). Úsalo si aporta y cita [fuente: título]:\n\n${context}` : '',
     useMemory && sessionId ? memoryBlock(sessionId) : '',
+    autoBlock,
     'Separa hechos, hipótesis y acciones propuestas. Si no tienes datos suficientes, dilo con honestidad; nunca inventes contenido de la bóveda.',
   ].filter(Boolean).join('\n\n');
 
@@ -103,4 +128,4 @@ async function status() {
   return { ...state, vault: vault.stats() };
 }
 
-module.exports = { talk, status, addMemory, listMemory, deleteMemory, classify };
+module.exports = { talk, status, addMemory, listMemory, deleteMemory, classify, ROUTES };

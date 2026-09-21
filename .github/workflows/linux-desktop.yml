@@ -88,6 +88,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: knklinux-linux-installer
+          retention-days: 7
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage

@@ -171,6 +171,15 @@ async function sendRaw(session, raw, opts = {}) {
 
   const maxRedirects = Math.max(0, Math.min(5, Number(opts.maxRedirects) || 0));
   const headers = effectiveHeaders(request);
+  // Cookie-jar del operador: si la petición no trae Cookie y el jar tiene
+  // entrada para el host, se adjunta (caza autenticada sin pegar secretos).
+  try {
+    const hasCookie = Object.keys(headers).some((k) => k.toLowerCase() === 'cookie');
+    if (!hasCookie) {
+      const jarCookie = require('./cookie-jar').get(host);
+      if (jarCookie) headers['cookie'] = jarCookie;
+    }
+  } catch {}
 
   const resp = await netMod.fetch(url, {
     method: request.method,
