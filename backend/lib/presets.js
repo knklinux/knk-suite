@@ -109,6 +109,44 @@ const PRESETS = {
       'Revisa "Out of scope" y "Known issues / duplicates" antes de reportar.',
     ],
   },
+  'tesla-bugcrowd': {
+    id: 'tesla-bugcrowd',
+    nombre: 'Tesla — Bugcrowd',
+    programUrl: 'https://bugcrowd.com/engagements/tesla',
+    // VERIFICA el panel: el Brief manda (OOS y reglas cambian).
+    scope: ['tesla.com', '*.tesla.com'],
+    outOfScope: [],
+    rateLimitMs: 2500,
+    userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
+    opplanBase: {
+      nombre: 'Tesla Bugcrowd — caza',
+      objetivo: 'Recon pasivo + revisión manual de superficie web/API con cuenta propia donde aplique.',
+      reglas: 'Brief > todo. Solo cuentas propias. Sin DoS/fuerza bruta/scraping agresivo. Staging decommissioned (NXDOMAIN) no es hallazgo.',
+    },
+    notas: [
+      'Staging viejo (ai-api-stg/uat, acs2-poc.voice) = NXDOMAIN decommissioned, no reportable.',
+      'www con bot-wall 403: la caza real es tras login o en APIs.',
+    ],
+  },
+  '1password-bugcrowd': {
+    id: '1password-bugcrowd',
+    nombre: '1Password — Bugcrowd',
+    programUrl: 'https://bugcrowd.com/engagements/1password',
+    // VERIFICA el panel: el Brief manda (OOS y reglas cambian).
+    scope: ['1password.com', '*.1password.com'],
+    outOfScope: [],
+    rateLimitMs: 2500,
+    userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
+    opplanBase: {
+      nombre: '1Password Bugcrowd — caza',
+      objetivo: 'Recon pasivo + revisión manual con cuenta propia. Foco: lógica de cuentas/bóvedas compartidas, seguridad de cliente.',
+      reglas: 'Brief > todo. Solo cuentas propias. Sin DoS. Sin probar con datos de terceros.',
+    },
+    notas: [
+      'La app real (app/my/start) exige cuenta: el valor está tras login.',
+      'Cuidado con vaults ajenos: solo los tuyos.',
+    ],
+  },
 };
 
 function listPresets() {
