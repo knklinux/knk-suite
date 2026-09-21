@@ -705,7 +705,10 @@ async function hashLookup(hash) {
 
 // ── 11. CRT.SH — subdominios por transparencia de certificados (sin clave) ──
 function validDomain(d) {
-  return /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(String(d || ''));
+  // Etiquetas con guion bajo inicial permitidas (_dmarc, _domainkey…): son
+  // DNS legítimo y spfDmarc las construye internamente. Sin esto, el chequeo
+  // DMARC fallaba siempre con "Dominio inválido".
+  return /^(?=.{1,253}$)[a-z0-9_](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9_](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(String(d || ''));
 }
 
 async function crtshSubs(domain) {
