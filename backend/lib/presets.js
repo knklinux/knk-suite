@@ -28,7 +28,9 @@ const PRESETS = {
     programUrl: 'https://bugcrowd.com/engagements/openai',
     // Conservador: apex + lo que el Brief nombra. Amplía SOLO con grupos
     // objetivo de TU panel (API, ChatGPT, Codex, API keys...).
-    scope: ['openai.com', 'chatgpt.com'],
+    // El motor de scope exige wildcard explícito para subdominios: el apex
+    // solo NO cubre accounts./auth./chat. (matchesRule: '*.x' ⊃ subs, 'x' = apex).
+    scope: ['openai.com', '*.openai.com', 'chatgpt.com', '*.chatgpt.com'],
     outOfScope: ['pay.openai.com', 'community.openai.com'],
     rateLimitMs: 2000,
     userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
@@ -70,7 +72,7 @@ const PRESETS = {
     id: 'atlassian-bugcrowd',
     nombre: 'Atlassian — Bugcrowd',
     programUrl: 'https://bugcrowd.com/engagements/atlassian',
-    scope: ['*.atlassian.com', '*.atl-paas.net'],
+    scope: ['atlassian.com', '*.atlassian.com', 'atl-paas.net', '*.atl-paas.net'],
     outOfScope: ['support.atlassian.com', 'shop.atlassian.com', 'bytebucket.org', 'bitbucket.io', 'blog.bitbucket.org', 'support.loom.com', 'info.loom.com'],
     rateLimitMs: 4000,
     userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
