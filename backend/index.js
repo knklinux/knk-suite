@@ -116,9 +116,12 @@ wss.on('connection', async (ws, req) => {
       send({ type: 'error', data: 'Terminal PTY no disponible en este entorno (node-pty no carga correctamente).' });
       return;
     }
-    const choice = new URL(req.url, 'http://x').searchParams.get('runtime') || 'auto';
+    const qs = new URL(req.url, 'http://x').searchParams;
+    const choice = qs.get('runtime') || 'auto';
+    const tab = (qs.get('tab') || 'main').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24) || 'main';
     const st = await kali.detect();
     const term = kali.pickTerminal(choice, st);
+    term.tab = tab;
     sessKey = ptyMgr.keyFor(term);
     sess = ptyMgr.attach(sessKey, ws);
     if (sess && sess.pty) {
@@ -147,6 +150,7 @@ wss.on('connection', async (ws, req) => {
         else if (m.type === 'resize' && live) live.resize(m.cols || 120, m.rows || 30);
       } catch {}
     });
+
 
     ws.on('close', () => {
       // La PTY sobrevive al cierre de la vista (ver pty-manager).
@@ -184,6 +188,29 @@ process.on('SIGTERM', () => process.exit(0));
       }
     }
   } catch {}
+
+  // ── Diagnóstico de navegador ────────────────────────────────────────────
+  // Los módulos que usan un navegador real (lib/browser.js CDP, BiDi Firefox)
+  // heredan el proxy de usuario de Windows, que Node NO usa. Si ese proxy apunta
+  // a algo que no escucha, el navegador no carga NADA y el módulo parece "sin
+  // hallazgo". Se comprueba al arrancar (1 lectura de registro + 1 connect TCP)
+  // y NUNCA bloquea el arranque.
+  try {
+    const diag = await require('./lib/diagnostico-navegador').diagnosticoNavegador();
+    if (diag.ok) {
+      console.log(`[navegador] ${diag.resumen}`);
+      if (diag.avisos) console.log('[navegador] detalle: node backend/lib/diagnostico-navegador.js');
+    } else {
+      console.warn(`[navegador] ⛔ ${diag.resumen}`);
+      for (const h of diag.hallazgos.filter((x) => x.nivel === 'error')) {
+        console.warn(`[navegador]   ${h.codigo}: ${h.mensaje}`);
+        if (h.accion) console.warn(`[navegador]   → ${h.accion}`);
+      }
+    }
+  } catch (e) {
+    console.warn('[navegador] diagnóstico no disponible:', e.message);
+  }
+
   server.listen(PORT, HOST, () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════════════╗');

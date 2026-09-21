@@ -70,6 +70,15 @@ export default function KaliTerminal({ api, inject }) {
   };
   // Selector de terminal: qué runtime abrir en esta conexión
   const [choice, setChoice] = useState('auto');
+  // Pestañas (?tab=): cada una es una PTY persistente en el backend.
+  const [tabs, setTabs] = useState(['main']);
+  const [tab, setTab] = useState('main');
+  const tabRef = useRef('main');
+  useEffect(() => { tabRef.current = tab; }, [tab]);
+  const newTab = () => {
+    const id = 't' + Math.random().toString(36).slice(2, 6);
+    setTabs((p) => [...p, id]); setTab(id);
+  };
   const [rts, setRts] = useState(null); // {auto, runtimes:[{id,label,available,reason}]}
   const loadRuntimes = useCallback(() => {
     api('/kali/runtimes').then(setRts).catch(() => {});
@@ -106,7 +115,7 @@ export default function KaliTerminal({ api, inject }) {
     termRef.current = term;
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws/terminal?runtime=${choiceRef.current}`);
+    const ws = new WebSocket(`${proto}://${location.host}/ws/terminal?runtime=${choiceRef.current}&tab=${tabRef.current}`);
     wsRef.current = ws;
     ws.onopen = () => {
       setConnected(true);
@@ -141,7 +150,7 @@ export default function KaliTerminal({ api, inject }) {
       try { ws.close(); } catch {}
       term.dispose();
     };
-  }, [connNonce]);
+  }, [connNonce, tab]);
 
   // Inyección desde otros módulos (asistente de desbloqueo del job 🧰)
   useEffect(() => {
@@ -266,6 +275,16 @@ export default function KaliTerminal({ api, inject }) {
           {choice !== 'auto' && rts && !rts.runtimes.find(r => r.id === choice)?.available && (
             <span style={{ fontSize: 10.5, color: 'var(--yellow)' }}>↳ cae al shell local</span>
           )}
+        </div>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+          <span className="muted" style={{ fontSize: 11, letterSpacing: 1 }}>pestañas:</span>
+          {tabs.map((t) => (
+            <button key={t} className={`btn btn-sm ${tab === t ? '' : 'btn-outline'}`} onClick={() => setTab(t)}
+              title={t === 'main' ? 'PTY principal (?tab=main)' : `PTY ${t} (persistente en el backend)`}>
+              {t === tab ? '● ' : '○ '}{t}
+            </button>
+          ))}
+          <button className="btn btn-sm btn-outline" onClick={newTab} title="Nueva PTY persistente">＋</button>
         </div>
 
         {dockerHelp && rts && !rts.dockerCli && (

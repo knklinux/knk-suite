@@ -16,7 +16,8 @@ const BACKLOG_LINES = 500;
 const sessions = new Map(); // key -> { pty, clients:Set, backlog:[], lastActive }
 
 function keyFor(term) {
-  return `${term.runtime || 'local'}::${term.shell}::${(term.shellArgs || []).join(' ')}`;
+  const tab = String(term.tab || 'main').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24) || 'main';
+  return `${term.runtime || 'local'}::${term.shell}::${(term.shellArgs || []).join(' ')}::${tab}`;
 }
 
 function pushLine(sess, data) {
