@@ -29,8 +29,12 @@ function statusColor(code) {
 
 const monoArea = { width: '100%', fontFamily: 'monospace', fontSize: 12, background: '#0a0f16', color: '#c9d1d9', border: '1px solid var(--border)', borderRadius: 6, padding: 10 };
 
-export default function Repeater({ api }) {
+export default function Repeater({ api, prefill = null }) {
   const [raw, setRaw] = useState(SAMPLE);
+  const [prefilled, setPrefilled] = useState(false);
+  useEffect(() => {
+    if (prefill && !prefilled) { setRaw(prefill); setPrefilled(true); }
+  }, [prefill, prefilled]);
   const [history, setHistory] = useState([]);   // {send, diff, id}
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -42,7 +46,10 @@ export default function Repeater({ api }) {
 
   // ── Intruder ──────────────────────────────────────────────────────────────
   const [caps, setCaps] = useState(null);
+  const [presets, setPresets] = useState([]);
+  const [preset, setPreset] = useState('');   // '' = payloads manuales
   const [payloadText, setPayloadText] = useState('');
+  const [matchText, setMatchText] = useState('welcome,root,error,exception');
   const [run, setRun] = useState(null);        // run pública del backend
   const [fuzzBusy, setFuzzBusy] = useState(false);
   const [fuzzError, setFuzzError] = useState(null);
@@ -50,7 +57,7 @@ export default function Repeater({ api }) {
   const [fuzzCreated, setFuzzCreated] = useState(null);
   const pollRef = useRef(null);
 
-  useEffect(() => { api('/intruder/config').then((r) => r?.caps && setCaps(r.caps)).catch(() => {}); }, [api]);
+  useEffect(() => { api('/intruder/config').then((r) => { if (r?.caps) setCaps(r.caps); if (Array.isArray(r?.presets)) setPresets(r.presets); }).catch(() => {}); }, [api]);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const positions = (raw.match(/§[^§]*§/g) || []).length;
@@ -62,7 +69,7 @@ export default function Repeater({ api }) {
     setFuzzBusy(true); setFuzzError(null); setFuzzCreated(null);
     api('/intruder/start', {
       method: 'POST',
-      body: JSON.stringify({ raw, payloadText, maxRedirects: Number(maxRedirects) || 0 }),
+      body: JSON.stringify({ raw, preset: preset || undefined, payloadText: preset ? undefined : payloadText, maxRedirects: Number(maxRedirects) || 0, match: matchText.split(/[\r\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 10) }),
     }).then((r) => {
       if (!r.ok) { setFuzzError(r.error || 'no se pudo iniciar'); setFuzzBusy(false); return; }
       setRun(r.run);
@@ -253,18 +260,33 @@ export default function Repeater({ api }) {
       </p>
 
       <div className="card">
-        <h3>🧰 Payloads <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>(uno por línea — se deduplican)</span></h3>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>🧰 Payloads <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>(uno por línea — se deduplican)</span>
+          {presets.length > 0 && (
+            <select value={preset} onChange={(e) => setPreset(e.target.value)} title="Payload sets del servidor — pequeños y quirúrgicos, respetan los caps" style={{ fontSize: 11, background: '#0a101d', color: 'var(--text)', border: '1px solid #16314b', borderRadius: 6, padding: '4px 6px' }}>
+              <option value="">manuales…</option>
+              {presets.map((p) => <option key={p.id} value={p.id}>{p.label} ({p.count})</option>)}
+            </select>
+          )}
+        </h3>
         <textarea
           rows={6}
           value={payloadText}
           onChange={(e) => setPayloadText(e.target.value)}
           spellCheck={false}
-          placeholder={'1\n2\n3\n" OR 1=1 --\n../../../etc/passwd'}
-          style={monoArea}
+          disabled={Boolean(preset)}
+          placeholder={preset ? `usando el set del servidor: ${preset} — deselecciónalo para volver a manual` : '1\n2\n3\n" OR 1=1 --\n../../../etc/passwd'}
+          style={{ ...monoArea, opacity: preset ? 0.5 : 1 }}
+        />
+        <input
+          value={matchText}
+          onChange={(e) => setMatchText(e.target.value)}
+          placeholder="grep-match (coma o línea): cadenas a buscar en cada respuesta, p. ej. root, error, exception"
+          title="Como el grep-match de Burp: resalta en qué respuestas aparece cada cadena"
+          style={{ width: '100%', marginTop: 6, fontSize: 11, background: '#0a101d', color: 'var(--text)', border: '1px solid #16314b', borderRadius: 6, padding: '6px 8px', fontFamily: 'monospace' }}
         />
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-          <button className="btn" onClick={startFuzz} disabled={fuzzBusy || !positions || !payloadCount}>
-            ▶ Lanzar ({payloadCount} payload{payloadCount === 1 ? '' : 's'} × {positions || 0} pos)
+          <button className="btn" onClick={startFuzz} disabled={fuzzBusy || !positions || (!preset && !payloadCount)}>
+            ▶ Lanzar ({preset ? (presets.find((p) => p.id === preset)?.count ?? 0) : payloadCount} payload{(preset ? (presets.find((p) => p.id === preset)?.count ?? 0) : payloadCount) === 1 ? '' : 's'} × {positions || 0} pos{preset ? ' · set servidor' : ''})
           </button>
           <button className="btn btn-sm btn-outline" onClick={() => { setRaw(SAMPLE_FUZZ); setPayloadText('1\n2\n3\n999999\nabc'); }}>ejemplo de fuzz</button>
           {running && <button className="btn btn-sm" style={{ borderColor: 'var(--red, #f85149)', color: 'var(--red, #f85149)' }} onClick={abortFuzz}>■ Abortar</button>}
@@ -305,7 +327,7 @@ export default function Repeater({ api }) {
                 <th style={{ padding: 4 }}>#</th><th style={{ padding: 4 }}>Payload</th>
                 <th style={{ padding: 4 }}>Pos</th><th style={{ padding: 4 }}>Status</th>
                 <th style={{ padding: 4 }}>Long.</th><th style={{ padding: 4 }}>ms</th>
-                <th style={{ padding: 4 }}>Diff vs baseline</th><th style={{ padding: 4 }}></th>
+                <th style={{ padding: 4 }}>Diff vs baseline</th><th style={{ padding: 4 }}>Match</th><th style={{ padding: 4 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -321,6 +343,7 @@ export default function Repeater({ api }) {
                     <td style={{ padding: 4, fontWeight: outlier ? 800 : 500 }}>{r.length ?? '—'}</td>
                     <td style={{ padding: 4, color: 'var(--muted)' }}>{r.ms ?? '—'}</td>
                     <td style={{ padding: 4, color: 'var(--muted)' }}>{r.diff?.summary || ''}</td>
+                    <td style={{ padding: 4 }}>{(r.matches || []).map((m) => <span key={m} className="badge badge-ok" style={{ fontSize: 9, marginRight: 4 }}>{m}</span>)}</td>
                     <td style={{ padding: 4 }}>
                       {run.status !== 'running' && r.status != null && (
                         <button className="btn btn-sm btn-green" onClick={() => exportFinding(r.index)}>➕</button>

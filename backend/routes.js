@@ -644,6 +644,9 @@ router.post('/pipeline/full', async (req, res) => {
 router.post('/pipeline/local', (req, res) => res.json(localPipeline.runLocalPipeline(getSession(), req.body || {})));
 router.post('/surface/map', async (req, res) => { try { res.json(await surfaceMap.mapSurface(getSession().target, req.body || {})); } catch (e) { res.status(400).json({ ok: false, error: e.message }); } });
 router.get('/reports', (req, res) => res.json(db.getReports(getSession().id)));
+// Plantillas por plataforma (secciones + recordatorios del formulario).
+router.get('/reports/templates', (req, res) => res.json({ ok: true, platforms: ['bugcrowd', 'hackerone', 'intigriti', 'yeswehack'] }));
+router.get('/reports/templates/:platform', (req, res) => res.json({ ok: true, template: require('./lib/report').platformTemplate(req.params.platform) }));
 router.post('/reports/save', (req, res) => { const s = getSession(); const id = db.saveReport(s.id, req.body?.slug || 'draft', req.body?.data || {}, req.body?.status || 'borrador'); res.json({ ok: true, id }); });
 router.post('/reports/update', (req, res) => { db.stmts.updateReport.run(JSON.stringify(req.body?.data || {}), req.body?.status || 'borrador', req.body?.id); res.json({ ok: true }); });
 router.post('/reports/verify', async (req, res) => res.json(await verifierMod.verifyReport(req.body?.data || {}, { llm: llmMod })));
@@ -1089,9 +1092,9 @@ router.get('/intruder/from-proxy/:id', (req, res) => {
 
 router.post('/intruder/start', async (req, res) => {
   try {
-    const { raw, payloadText, preset, maxRedirects } = req.body || {};
+    const { raw, payloadText, preset, maxRedirects, match } = req.body || {};
     const s = getSession();
-    const r = await intruder.startRun(s, { raw, payloadText, preset, maxRedirects });
+    const r = await intruder.startRun(s, { raw, payloadText, preset, maxRedirects, match });
     if (!r.ok) return res.status(400).json(r);
     res.json({ ok: true, run: r.run });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }

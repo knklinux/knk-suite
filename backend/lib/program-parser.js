@@ -244,6 +244,31 @@ function parseBugcrowd(url) {
 }
 
 /**
+ * Intigriti: SPA — modo guiado con reglas de la plataforma precargadas.
+ * La ficha "Domains & rules" de cada programa manda: el operador pega el
+ * scope exacto (esta función deja la plantilla + recordatorios).
+ */
+function parseIntigriti(url) {
+  const slug = url.split('/').filter(Boolean).pop() || '';
+  const programName = slug.replace(/-/g, ' ').trim();
+  return {
+    source: 'intigriti',
+    autoParsed: false,
+    programUrl: url,
+    programName: programName || 'Programa Intigriti',
+    target: '',
+    domains: [],
+    outOfScope: [],
+    userAgent: '',
+    policy: 'Intigriti: respeta Domains & rules de la ficha (scope, OOS, severity, disclosure) | rate-limits y ventanas de test | sin DoS/fuerza bruta salvo permiso | evidencia completa (request/response + pasos) | usa cuenta propia',
+    rewards: 'Consultar la ficha del programa (tablas por severidad)',
+    rateLimit: 3000,
+    note: '⚠️  Intigriti es una SPA — pega el scope EXACTO de tu ficha (Platform → programa → Domains & rules). Muchos programas exigen cuenta propia y prohíben scanners: si la ficha lo prohíbe, usa solo proxy/Repeater manual.',
+    hint: 'Revisa "Out of scope" y "Known issues / duplicates" de la ficha antes de reportar. Combina con el preset intigriti-generico.',
+  };
+}
+
+/**
  * Bugcrowd / Intigriti: similar a HackerOne — SPAs.
  */
 function parseOther(url, platform) {
@@ -283,10 +308,10 @@ async function parseProgram(url) {
     case 'bugcrowd':
       return parseBugcrowd(url);
     case 'intigriti':
-      return parseOther(url, platform);
+      return parseIntigriti(url);
     default:
       return { error: `Plataforma no soportada: ${platform}. Solo YesWeHack (auto) y HackerOne/Bugcrowd/Intigriti (manual).` };
   }
 }
 
-module.exports = { parseProgram, parseYesWeHack, parseHackerOne, parseBugcrowd, detectPlatform };
+module.exports = { parseProgram, parseYesWeHack, parseHackerOne, parseBugcrowd, parseIntigriti, detectPlatform };

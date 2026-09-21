@@ -10,6 +10,57 @@ function slugify(s) {
   return String(s || 'sin-titulo').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
 }
 
+// ── Plantillas por plataforma: secciones que espera cada formulario ──
+function platformTemplate(platform) {
+  const p = String(platform || '').toLowerCase();
+  if (p === 'bugcrowd') {
+    return {
+      platform: 'bugcrowd',
+      sections: ['Summary (EN)', 'Steps to reproduce (numbered)', 'Proof-of-concept (request/response, screenshots)', 'Impact', 'Affected URLs/hosts'],
+      reminders: [
+        'Informe completo desde el inicio (nada de placeholders): el triage penaliza borradores.',
+        'Mínimo acceso a datos: si ves PII real, PARA y redacta.',
+        'Cuentas propias siempre; credenciales de test en el reporte si hacen falta para reproducir.',
+        'El Brief del programa prevalece sobre la política general.',
+      ],
+    };
+  }
+  if (p === 'hackerone' || p === 'h1') {
+    return {
+      platform: 'hackerone',
+      sections: ['Title', 'Summary', 'Steps to reproduce', 'Supporting information (URLs, payloads)', 'Impact', 'Severity (auto/bounty table)'],
+      reminders: [
+        'Sigue el formato HackerOne: título corto + summary + pasos numerados reproducibles.',
+        'Adjunta request/response crudos y vídeo si el impacto es visual.',
+        'Declara el asset exacto del scope (tal cual aparece en la pestaña Scope).',
+      ],
+    };
+  }
+  if (p === 'intigriti') {
+    return {
+      platform: 'intigriti',
+      sections: ['Title', 'Description', 'Proof of concept', 'Impact', 'Recommendation'],
+      reminders: [
+        'Cita la sección Domains & rules de tu ficha (qué scope cubre el PoC).',
+        'Evidencia completa obligatoria: request/response + pasos + entorno.',
+        'Revisa Known issues/duplicates de la ficha antes de enviar.',
+      ],
+    };
+  }
+  if (p === 'yeswehack' || p === 'ywh') {
+    return {
+      platform: 'yeswehack',
+      sections: ['Titre', 'Description', 'Preuve de concept', 'Impact', 'Recommandation'],
+      reminders: ['YWH acepta EN/FR; sé conciso y numera los pasos.', 'Declara endpoints exactos y herramienta usada.'],
+    };
+  }
+  return {
+    platform: p || 'generic',
+    sections: ['Title', 'Summary', 'Steps to reproduce', 'Supporting material/PoC', 'Impact', 'Remediation (optional)'],
+    reminders: [],
+  };
+}
+
 function generateReport(meta) {
   const v = reportReadiness(meta);
   if (!v.sendable) return { allowed: false, report: null, json: null, blockers: verdictToText(v) };
@@ -194,4 +245,4 @@ function diffReports(before, after) {
   return { changed, added, removed, summary: `${changed.length} cambiados, ${added.length} añadidos, ${removed.length} eliminados` };
 }
 
-module.exports = { generateReport, writeReport, writeReportHtml, diffReports, slugify };
+module.exports = { generateReport, writeReport, writeReportHtml, diffReports, slugify, platformTemplate };

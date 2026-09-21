@@ -28,6 +28,69 @@ const MAX_PAYLOADS = 50;          // techo de payloads por set
 const MAX_CONCURRENT = 3;         // máximo en vuelo simultáneo
 const MAX_RUNS_CONCURRENT = 2;    // runs activos máximos por sesión
 
+// ── Payload sets predefinidos (server-side, pequeños a propósito) ──────────
+// Complementan —no sustituyen— los payloads manuales del operador. Cada set
+// respeta MAX_PAYLOADS y son valores de sonda clásicos, no diccionarios de
+// fuerza bruta. Falsos positivos mínimos: se espera que el operador analice
+// las anomalías con la vista de resultados.
+const PAYLOAD_SETS = {
+  'dir-traversal': {
+    label: 'Path traversal (LFI)',
+    payloads: [
+      '../../../../etc/passwd',
+      '..\\..\\..\\..\\windows\\win.ini',
+      '....//....//....//etc/passwd',
+      '/etc/passwd',
+      '%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd',
+      'php://filter/convert.base64-encode/resource=index.php',
+    ],
+  },
+  'sqli-probe': {
+    label: 'Sonda SQLi (sin destructivas)',
+    payloads: [
+      "'",
+      '1\' OR \'1\'=\'1',
+      '1 UNION SELECT NULL--',
+      '1 AND SLEEP(0)--',
+      '1 ORDER BY 1--',
+      '1\' AND \'1\'=\'1',
+    ],
+  },
+  'xss-probe': {
+    label: 'Sonda XSS (reflexión, no exploit)',
+    payloads: [
+      'knkxss123',
+      '<svg/onload=alert(1)>',
+      '"><script>alert(1)</script>',
+      '\'<img src=x onerror=alert(1)>',
+      'javascript:alert(1)',
+      '{{7*7}}',
+    ],
+  },
+  'open-redirect': {
+    label: 'Open redirect (mismo host)',
+    payloads: [
+      '//knk-redirect.test',
+      '/\\knk-redirect.test',
+      'https://knk-redirect.test',
+      '%2f%2fknk-redirect.test',
+    ],
+  },
+  'ssti-probe': {
+    label: 'Sonda SSTI (detección)',
+    payloads: [
+      '{{7*7}}',
+      '${7*7}',
+      '<%= 7*7 %>',
+      '{{constructor.constructor(\'return 7*7\')()}}',
+    ],
+  },
+  'id-probe': {
+    label: 'IDOR/BAC (secuencia de IDs)',
+    payloads: ['1', '2', '3', '0', '999999', 'admin'],
+  },
+};
+
 // ── Estado en memoria (vive con el proceso del backend) ────────────────────
 const runs = new Map();
 
@@ -92,6 +155,50 @@ function detectAnomalies(results) {
   return { statusCodes, minorityStatus, lengthOutliers };
 }
 
+/**
+ * Marca posiciones §...§ en una petición cruda: el valor del PRIMER parámetro
+ * de la query (si existe) y, si hay cuerpo urlencoded, el primer campo. Así el
+ * "→ Intruder" desde el proxy llega listo para lanzar sin editar a mano.
+ */
+function markPositions(raw) {
+  const out = String(raw || '');
+  const idxQuery = out.indexOf('?');
+  const idxBody = out.indexOf('\r\n\r\n');
+  let result = out;
+
+  // 1) query: marcar el valor del primer parámetro (si hay y tiene "=").
+  // La query termina en el primer ESPACIO (antes de HTTP/1.1) o en el CRLF —
+  // nunca arrastrar la versión HTTP dentro de la posición §...§.
+  if (idxQuery !== -1) {
+    const lineEnd = out.indexOf('\r\n', idxQuery);
+    const spaceEnd = out.indexOf(' ', idxQuery);
+    const ends = [lineEnd, spaceEnd].filter((x) => x !== -1);
+    const qEnd = ends.length ? Math.min(...ends) : -1;
+    const queryPart = out.slice(idxQuery + 1, qEnd === -1 ? undefined : qEnd);
+    const firstParam = queryPart.split('&')[0];
+    if (firstParam && firstParam.includes('=')) {
+      const markedQuery = queryPart.replace(firstParam, firstParam.replace('=', '=§') + '§');
+      result = out.slice(0, idxQuery + 1) + markedQuery + (qEnd === -1 ? '' : out.slice(qEnd));
+    }
+  }
+
+  // 2) cuerpo urlencoded: marcar el primer campo (independiente de la query;
+  //    un POST sin query también llega listo para fuzzear). Se excluyen JSON
+  //    y cuerpos binarios/XML.
+  const bodyStart = result.indexOf('\r\n\r\n');
+  if (bodyStart !== -1) {
+    const body = result.slice(bodyStart + 4);
+    if (body && body.includes('=') && !body.startsWith('{') && !body.startsWith('<')) {
+      const first = body.split('&')[0];
+      if (first && first.includes('=')) {
+        const markedBody = body.replace(first, first.replace('=', '=§') + '§');
+        result = result.slice(0, bodyStart + 4) + markedBody;
+      }
+    }
+  }
+  return result;
+}
+
 // ── Construcción de la lista de ataques (payload, positionIndex) ───────────
 // 1 posición: un ataque por payload. Varias: emparejado (pairwise) con
 // rotación de posición, techo MAX_TOTAL_REQUESTS.
@@ -117,17 +224,28 @@ function parsePayloadSet(text) {
 }
 
 // ── Orquestador de la run ───────────────────────────────────────────────────
-async function startRun(session, { raw, payloadText, maxRedirects }) {
+async function startRun(session, { raw, payloadText, preset, maxRedirects, match }) {
   if (typeof raw !== 'string' || !raw.includes('§')) {
     return { ok: false, error: 'Marca al menos una posición con §...§ en la petición' };
   }
+  // Grep-match estilo Burp: cadenas a buscar en cada respuesta (máx 10 × 100).
+  const matchList = Array.isArray(match) ? match.map((m) => String(m).slice(0, 100)).filter(Boolean).slice(0, 10) : [];
   const positions = extractPositions(raw);
   if (!positions.length) {
     return { ok: false, error: 'No hay posiciones §...§ válidas' };
   }
-  const payloads = parsePayloadSet(payloadText);
+  let payloads;
+  let presetUsed = null;
+  if (preset) {
+    const set = PAYLOAD_SETS[String(preset)];
+    if (!set) return { ok: false, error: `preset desconocido: ${String(preset)}. Disponibles: ${Object.keys(PAYLOAD_SETS).join(', ')}` };
+    payloads = set.payloads.slice(0, MAX_PAYLOADS);
+    presetUsed = String(preset);
+  } else {
+    payloads = parsePayloadSet(payloadText);
+  }
   if (!payloads.length) {
-    return { ok: false, error: `Escribe tus payloads (uno por línea, máx ${MAX_PAYLOADS})` };
+    return { ok: false, error: `Escribe tus payloads (uno por línea, máx ${MAX_PAYLOADS}) o elige un preset` };
   }
 
   // gate de runs concurrentes por sesión
@@ -153,6 +271,8 @@ async function startRun(session, { raw, payloadText, maxRedirects }) {
     totalRequests: plan.length,
     completedRequests: 0,
     payloadCount: payloads.length,
+    preset: presetUsed,
+    match: matchList,
     positionCount: positions.length,
     maxConcurrent: MAX_CONCURRENT,
     results: [],
@@ -161,13 +281,13 @@ async function startRun(session, { raw, payloadText, maxRedirects }) {
   runs.set(id, run);
 
   // disparo asíncrono: la ruta responde ya con el id
-  executeRun(session, run, raw, plan, Number(maxRedirects) || 0)
+  executeRun(session, run, raw, plan, Number(maxRedirects) || 0, matchList)
     .catch((e) => { run.status = 'error'; run.error = String(e.message || e); run.finishedAt = new Date().toISOString(); });
 
   return { ok: true, run: publicRun(run) };
 }
 
-async function executeRun(session, run, raw, plan, maxRedirects) {
+async function executeRun(session, run, raw, plan, maxRedirects, matchList = []) {
   run.startedAt = new Date().toISOString();
 
   // baseline: una petición sin sustituir (payloads tal cual en su §...§) para diff
@@ -186,7 +306,7 @@ async function executeRun(session, run, raw, plan, maxRedirects) {
       const { payload, positionIndex } = plan[idx];
       const attemptRaw = applyPayload(raw, positionIndex, payload);
       const t0 = Date.now();
-      let result = { index: idx, payload, positionIndex, status: null, length: null, ms: null, error: null };
+      let result = { index: idx, payload, positionIndex, status: null, length: null, ms: null, error: null, matches: [] };
       try {
         const r = await repeater.sendRaw(session, attemptRaw, { maxRedirects });
         if (r.ok) {
@@ -195,6 +315,9 @@ async function executeRun(session, run, raw, plan, maxRedirects) {
           result.diff = diffVsBaseline(baseline, r.send.diffable);
           // guardamos solo un preview del body (evidencia ligera)
           result.bodyPreview = (r.send.responseBody || '').slice(0, 2000);
+          if (matchList.length && result.bodyPreview) {
+            result.matches = matchList.filter((m) => result.bodyPreview.includes(m));
+          }
         } else {
           result.error = r.error;
         }
@@ -252,6 +375,7 @@ function publicRun(run) {
     totalRequests: run.totalRequests,
     completedRequests: run.completedRequests,
     payloadCount: run.payloadCount,
+    preset: run.preset || null,
     positionCount: run.positionCount,
     maxConcurrent: run.maxConcurrent,
     baseline: run.baseline || null,
@@ -313,6 +437,8 @@ function toFinding(sessionId, runId, resultIndex, note) {
 module.exports = {
   // constantes expuestas para la UI/ tests
   MAX_TOTAL_REQUESTS, MAX_PAYLOADS, MAX_CONCURRENT, MAX_RUNS_CONCURRENT,
+  PAYLOAD_SETS,
+  markPositions,
   extractPositions,
   applyPayload,
   parsePayloadSet,
