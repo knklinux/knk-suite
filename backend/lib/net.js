@@ -102,6 +102,22 @@ const SUELO_MS = 800; // suelo anti-DoS: por debajo, la suite va más rápido de
 let _minDelayMs = 1500; // mínimo entre inicios de petición (anti-DoS)
 let _maxBatch = 30; // máximo de peticiones por ventana de 60s
 let _uaLocked = false; // la sesión puede fijar el UA; módulos auxiliares no lo reemplazan
+let _extraHeaders = {}; // cabeceras globales del programa (p. ej. X-Intigriti-Username)
+// Fija cabeceras globales (objeto {Nombre: valor}); valores vacíos se ignoran.
+// Se adjuntan a TODAS las peticiones salientes (repeater, hunter, recon).
+function setExtraHeaders(obj) {
+  _extraHeaders = {};
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj).slice(0, 10)) {
+      const key = String(k).trim();
+      const val = String(v == null ? '' : v).trim();
+      if (!key || !val || /^(host|content-length|connection|user-agent|cookie|authorization)$/i.test(key)) continue;
+      _extraHeaders[key] = val.slice(0, 256);
+    }
+  }
+  return { ..._extraHeaders };
+}
+function getExtraHeaders() { return { ..._extraHeaders }; }
 function setRateLimit(delayMs) {
   const value = Number(delayMs);
   if (!Number.isFinite(value)) {
@@ -649,7 +665,7 @@ function fetch(url, opts = {}) {
       // antes del spread (gana el llamante) y `User-Agent` va después (la
       // identidad queda bloqueada). Con el spread primero, el `Accept` del
       // llamante se descartaba en silencio — un endpoint SSE negociando `*/*`.
-      const reqHeaders = { Accept: '*/*', ...headers, 'User-Agent': fullUA };
+      const reqHeaders = { Accept: '*/*', ...headers, ..._extraHeaders, 'User-Agent': fullUA };
       let payload = body;
       if (body && typeof body !== 'string') {
         payload = JSON.stringify(body);
@@ -771,6 +787,7 @@ module.exports = {
   fetch, getJson, getText, normalizeHost, qs,
   setUA, getUA, lockUA, unlockUA, getRateLimit, setRateLimit, setStealth, setMaxBatch, getMaxBatch, waitForSlot,
   setScope, getScope, inScope, hostAllowed, resolvesInternal,
+  setExtraHeaders, getExtraHeaders,
   setProxy, getProxy, isSafePublicHost, setOutOfScope, getOutOfScope,
   isInternalHost, isInternalIPv4, isInternalIPv6,
   checkPublicIP, getCachedPublicIP,

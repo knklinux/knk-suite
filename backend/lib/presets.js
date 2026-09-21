@@ -147,6 +147,40 @@ const PRESETS = {
       'Cuidado con vaults ajenos: solo los tuyos.',
     ],
   },
+  'adobe-intigriti': {
+    id: 'adobe-intigriti',
+    nombre: 'Adobe — Intigriti (público, N1 hasta $15k)',
+    programUrl: 'https://app.intigriti.com/',
+    // Scope de la ficha pública 2026-09-21. Niveles: N1=bonus AI (hasta $15k),
+    // N2=web/móvil alto valor, N3=empresarial/identidad. OOS por CLASE (ver notas).
+    scope: [
+      'acrobat.adobe.com', '*.acrobat.adobe.com',
+      'stock.adobe.com', 'firefly.adobe.com',
+      'lightroom.adobe.com', '*.lightroom.adobe.com',
+      'photoshop.adobe.com',
+      'new.express.adobe.com', 'portfolio.ccpsx.com', 'fonts.adobe.com',
+      'net.s2stagehance.com', 'learningmanagerstage4.adobe.com',
+      'account.adobe.com', 'auth.services.adobe.com', 'adobeid-na1.services.adobe.com',
+      'ims-na1.adobelogin.com', 'federatedid-na1.services.adobe.com',
+      'account.magento.com', 'repo.magento.com', 'magento.com',
+    ],
+    outOfScope: ['coldfusion.adobe.com', 'tracker.adobe.com'],
+    rateLimitMs: 1000,
+    userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux intigriti:{username}',
+    extraHeaders: { 'X-Intigriti-Username': '' },
+    opplanBase: {
+      nombre: 'Adobe Intigriti — caza',
+      objetivo: 'Recon pasivo + revisión manual por niveles (N1 AI con impacto backend, N2 web/móvil, N3 identidad). Cuentas @intigriti.me.',
+      reglas: 'Ficha > todo. UA con intigriti:{username} + header X-Intigriti-Username. Máx 20 rps (vamos a 1rps). IA-asistido permitido SOLO validado a mano. Sin DoS, sin MITM ajeno, sin divulgar.',
+    },
+    notas: [
+      'OOS por clase: headers/cookies/CSRF-logout/open-redirect-bajo/SPF-DMARC/user-enum/bruteforce/trial-bypass/CSV/libs-sin-PoC/clickjacking/version/adivinanza-paquetes/takeover-SIN-PoC-de-control/LLM-solo-alucinación.',
+      'Takeover solo con PoC de control del recurso. ColdFusion: solo con Lockdown + última versión, sin CF Admin.',
+      'Móvil: solo cuentas/roles del test plan, sin root/APK-maliciosa.',
+      'AI Nivel 1: exige impacto backend real (exfiltración, cross-account, escalada, bypass) — prompt-injection sin impacto = FUERA.',
+      'Leer Adobe_Bug_Bounty_Test_Plans.docx antes de cada producto.',
+    ],
+  },
 };
 
 function listPresets() {
@@ -169,7 +203,7 @@ function applyPreset(session, id) {
   s.program_url = p.programUrl;
   s.program_name = p.nombre;
   s.rate_limit_ms = p.rateLimitMs;
-  if (p.userAgent) s.user_agent = p.userAgent;
+  if (p.userAgent) s.user_agent = String(p.userAgent).replace(/\{username\}/gi, process.env.KNK_INTIGRITI_USER || '{username}');
   const art = s.artifacts || {};
   art.presetAplicado = p.id;
   art.presetNotas = p.notas;
@@ -186,6 +220,23 @@ function applyPreset(session, id) {
     netMod.setScope(s.scope);
     netMod.setRateLimit(s.rate_limit_ms);
     if (s.user_agent) netMod.setUA(s.user_agent);
+    // Cabeceras del programa (p. ej. X-Intigriti-Username): sustituye
+    // {username} por tu usuario y rellena valores vacíos desde KNK_* si existen.
+    if (p.extraHeaders) {
+      const filled = {};
+      for (const [k, v] of Object.entries(p.extraHeaders)) {
+        let val = String(v == null ? '' : v);
+        if (/\{username\}/i.test(val)) val = val.replace(/\{username\}/gi, process.env.KNK_INTIGRITI_USER || '');
+        if (!val.trim()) continue;
+        filled[k] = val;
+      }
+      netMod.setExtraHeaders(filled);
+      const art2 = s.artifacts || {};
+      art2.extraHeaders = Object.keys(filled);
+      s.artifacts = art2;
+    } else {
+      netMod.setExtraHeaders({});
+    }
   } catch {}
   return { ok: true, preset: p.id, scope: s.scope, outOfScope: s.out_of_scope, opplanReseteado, notas: p.notas };
 }
