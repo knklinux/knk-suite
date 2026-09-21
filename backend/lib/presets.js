@@ -181,6 +181,45 @@ const PRESETS = {
       'Leer Adobe_Bug_Bounty_Test_Plans.docx antes de cada producto.',
     ],
   },
+  'mercadolibre-h1': {
+    id: 'mercadolibre-h1',
+    nombre: 'MercadoLibre — HackerOne (bono newbie 2026)',
+    programUrl: 'https://hackerone.com/mercadolibre',
+    // Bono newbie 2026 al primer High/Critical. VERIFICA scope/stats en H1.
+    scope: ['mercadolibre.com', '*.mercadolibre.com', 'mercadopago.com', '*.mercadopago.com'],
+    outOfScope: [],
+    rateLimitMs: 2000,
+    userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
+    opplanBase: {
+      nombre: 'MercadoLibre H1 — caza sin login',
+      objetivo: 'Superficie anónima: búsqueda, catálogo, APIs públicas de items, validadores de cupón/precio. Checkout con cuenta (una sola).',
+      reglas: 'H1 > todo. Sin login salvo cuenta propia para checkout. Sin DoS. Ritmo manual.',
+    },
+    notas: [
+      'NaN en validadores de cupón/precio de APIs públicas (patrón de la suite).',
+      'CORS en subdominios de marketing. Recon .com/.com.ar/.com.mx.',
+      'Alta competencia: prioriza lógica de negocio sobre headers.',
+    ],
+  },
+  'dyson-h1': {
+    id: 'dyson-h1',
+    nombre: 'Dyson — HackerOne (61 activos, bounty 14d)',
+    programUrl: 'https://hackerone.com/dyson',
+    // *.cp.dyson.com con 61 activos bounty-eligible. VERIFICA en H1.
+    scope: ['dyson.com', '*.dyson.com'],
+    outOfScope: [],
+    rateLimitMs: 2000,
+    userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
+    opplanBase: {
+      nombre: 'Dyson H1 — caza sin login',
+      objetivo: 'E-commerce público: búsqueda, catálogo, validadores de cupón, previsualizadores.',
+      reglas: 'H1 > todo. Sin login salvo cuenta propia. Sin DoS.',
+    },
+    notas: [
+      'DMARC p=none en apex (gap, requiere PoC con impacto).',
+      'Recon masivo sobre wildcard + CORS en APIs de tienda + open-redirect en compra.',
+    ],
+  },
 };
 
 function listPresets() {
