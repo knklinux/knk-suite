@@ -137,14 +137,79 @@ export default function Assistant({ api, floating = false }) {
     const history = msgs.slice(-8).map(({ role, text }) => ({ role, text }));
     setInput(''); setBusy(true); setState('THINKING');
     setMsgs((prev) => [...prev, { role: 'user', text: prompt, at: Date.now() }]);
+
+    // Acumulador del mensaje del asistente (se actualiza en vivo)
+    let acc = '';
+    let toolsSeen = null;
+    let modelUsed = '';
+    let sourcesUsed = [];
+    const pushMsg = (text, extra = {}) => setMsgs((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last && last.role === 'assistant' && last.streaming) {
+        next[next.length - 1] = { ...last, text, ...extra };
+        return next;
+      }
+      next.push({ role: 'assistant', text, streaming: true, at: Date.now(), ...extra });
+      return next;
+    });
+
     try {
-      const r = await api('/assistant/talk', { method: 'POST', body: JSON.stringify({ prompt, mode: mode === 'auto' ? undefined : mode, useVault: useBrain, useMemory, history }) });
-      const text = r.text || (r.offline ? '⚠️ Ollama no responde.' : '(sin respuesta)');
-      setMsgs((prev) => [...prev, { role: 'assistant', text, model: r.model, sources: r.sources || [], at: Date.now() }]);
-      speak(text);
-      if (!voiceOn) setState('IDLE');
-    } catch { setMsgs((prev) => [...prev, { role: 'system', text: '⚠️ Error contactando al asistente', at: Date.now() }]); setState('IDLE'); }
-    finally { setBusy(false); }
+      // 1º intento: streaming SSE (delta/tools/done/error)
+      const resp = await fetch('/api/assistant/stream', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, mode: mode === 'auto' ? undefined : mode, useVault: useBrain, useMemory, history }),
+      });
+      if (resp.ok && (resp.headers.get('content-type') || '').includes('text/event-stream')) {
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        let finished = false;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf('\n\n')) !== -1) {
+            const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+            const line = raw.split('\n').find((l) => l.startsWith('data: '));
+            if (!line) continue;
+            let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+            if (ev.type === 'delta') { acc += ev.delta; pushMsg(acc); }
+            else if (ev.type === 'tools') { toolsSeen = ev.calls || []; acc = ''; pushMsg('Consultando datos de la sesión…', { tools: toolsSeen }); }
+            else if (ev.type === 'done') { finished = true; modelUsed = ev.model || ''; if (typeof ev.finalText === 'string' && ev.finalText) acc = ev.finalText; }
+            else if (ev.type === 'error') { acc += (acc ? '\n\n' : '') + '⚠️ ' + (ev.error || 'error'); pushMsg(acc); }
+          }
+        }
+        if (finished) {
+          const finalText = acc || '(sin respuesta)';
+          setMsgs((prev) => [...prev.slice(0, -1).filter((m) => !(m.role === 'assistant' && m.streaming && !m.text && prev.length > 1)), { role: 'assistant', text: finalText, model: modelUsed, sources: sourcesUsed, tools: toolsSeen, at: Date.now() }]);
+          speak(finalText);
+          if (!voiceOn) setState('IDLE');
+          return;
+        }
+        // stream roto sin done: cae al fallback con lo acumulado
+        if (acc) {
+          setMsgs((prev) => [...prev, { role: 'assistant', text: acc, model: modelUsed, at: Date.now() }]);
+          speak(acc);
+        }
+      } else {
+        throw new Error('sin stream');
+      }
+    } catch {
+      // 2º intento: talk clásico (sin streaming)
+      try {
+        const r = await api('/assistant/talk', { method: 'POST', body: JSON.stringify({ prompt, mode: mode === 'auto' ? undefined : mode, useVault: useBrain, useMemory, history }) });
+        const text = r.text || (r.offline ? '⚠️ Ollama no responde.' : '(sin respuesta)');
+        setMsgs((prev) => [...prev, { role: 'assistant', text, model: r.model, sources: r.sources || [], at: Date.now() }]);
+        speak(text);
+        if (!voiceOn) setState('IDLE');
+      } catch {
+        setMsgs((prev) => [...prev, { role: 'system', text: '⚠️ Error contactando al asistente', at: Date.now() }]);
+        setState('IDLE');
+      }
+    } finally { setBusy(false); }
   };
 
   const reset = () => { clearConversation(); setMsgs([]); };
@@ -154,6 +219,11 @@ export default function Assistant({ api, floating = false }) {
     <div className="assistant-toolbar">{MODES.map((item) => <button className={`btn btn-sm ${mode === item.id ? '' : 'btn-outline'}`} onClick={() => setMode(item.id)} key={item.id}>{item.label}</button>)}<button className="btn btn-sm btn-outline" onClick={reset}>limpiar</button><span className="muted">{busy ? 'razonando…' : 'listo'}</span></div>
     <div className="assistant-log">{msgs.length === 0 && <p className="muted">Puedo explicar, razonar sobre evidencias, preparar comandos y ayudarte a estudiar. No fingiré ejecuciones.</p>}{msgs.map((message, index) => <div className={`assistant-msg ${message.role}`} key={`${message.at || index}-${index}`}><b>{message.role === 'user' ? 'TÚ' : message.role === 'assistant' ? 'KNK' : 'SISTEMA'}</b><div>{message.text}</div>{message.model && <small>{message.model}{message.sources?.length ? ` · ${message.sources.length} fuentes` : ''}</small>}</div>)}<div ref={endRef} /></div>
     <div className="assistant-input"><textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="¿Qué necesitas analizar?" /><button className={`btn btn-sm ${listening ? 'btn-green' : 'btn-outline'}`} onClick={listen}>🎙️</button><button className="btn" onClick={() => send()} disabled={busy}>Enviar</button></div>
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+      <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => send('¿En qué punto está la misión? Dime target, programa, fases hechas y qué hacer a continuación, en 5 líneas.')} title="Estado + siguiente paso">🎯 Siguiente paso</button>
+      <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => send('Resume mis hallazgos por severidad con id y asset, y dime cuáles son candidatos reales a reporte y por qué (impacto + reglas del programa).')} title="Hallazgos candidatos a reporte">🐞 Candidatos a reporte</button>
+      <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => send('¿Qué hallazgos tengo sin triar (estado nuevo)? Para cada uno: qué verificar y dónde (Repeater/proxy/panel).')} title="Cola de triaje">📋 Qué triar</button>
+    </div>
     <footer className="assistant-foot"><label><input type="checkbox" checked={voiceOn} onChange={(e) => { setVoiceOn(e.target.checked); if (!e.target.checked) stopVoice(); }} /> voz</label>{voiceOn && voices && (<select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4 }}>{Object.entries(voices).map(([id, v]) => <option key={id} value={id}>{v.label}</option>)}</select>)}<label><input type="checkbox" checked={useBrain} onChange={(e) => setUseBrain(e.target.checked)} /> cerebro</label><label><input type="checkbox" checked={useMemory} onChange={(e) => setUseMemory(e.target.checked)} /> memoria</label><span className="muted">La ventana flotante sigue disponible fuera de la terminal · Ctrl+Alt+K</span></footer>
   </section>;
 }

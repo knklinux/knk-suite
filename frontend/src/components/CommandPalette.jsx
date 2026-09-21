@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { apiFetch } from '../api';
+import { NAV_ORDER, NAV_MODULES, LAB_MODULES } from '../nav';
 
 function fuzzy(q, text) {
   const t = text.toLowerCase();
@@ -26,16 +27,17 @@ function Highlight({ text, positions }) {
   return [...text].map((char, index) => indexes.has(index) ? <b key={index} className="palette-hl">{char}</b> : char);
 }
 
-export default function CommandPalette({ onGo, onClose }) {
+export default function CommandPalette({ onGo, onClose, mode = 'bounty' }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(null);
   const [result, setResult] = useState(null);
   const [armed, setArmed] = useState(null);
   const listRef = useRef(null);
-  const modules = useMemo(() => [
-    ['dashboard', 'Panel', 'hub inicio resumen estado'], ['targets', 'Targets', 'objetivo scope autorización'], ['opplan', 'OPPLAN', 'plan operación aprobación'], ['pipeline', 'Pipeline', 'fases engagement hallazgos'], ['jobs', 'Trabajos', 'jobs async ejecución progreso'], ['terminal', 'Terminal Kali', 'shell pty consola runtime kali'], ['gates', 'Compuertas', 'gates validación pre-envío'], ['revocation', 'Revocación A/B', 'ab revocar credenciales'], ['assistant', 'KNK Assistant', 'ia copiloto voz cerebro'], ['chat', 'Chat unificado', 'modelo conversación directo'], ['vault', 'Bóveda', 'obsidian notas conocimiento'], ['osint', 'OSINT Hub', 'shodan cámaras geoip'], ['labs', 'Laboratorios VM', 'virtualbox wsl dvwa metasploitable'], ['reportes', 'Reportes', 'informes export salida'], ['compliance', 'Cumplimiento', 'políticas compliance legal'], ['cheatsheet', 'Guía manual', 'cheatsheet comandos ayuda'],
-  ].map(([id, label, kw]) => ({ id, label, kw })), []);
+  // Fuente única: nav.js (mismo orden y etiquetas que el sidebar).
+  const modules = useMemo(() => NAV_ORDER.filter((id) => mode !== 'bounty' || !LAB_MODULES.has(id)).map((id) => ({
+    id, label: NAV_MODULES[id].label, kw: NAV_MODULES[id].kw,
+  })), [mode]);
   const actions = useMemo(() => [
     { id: 'status-kali', label: 'Kali: estado del runtime', kw: 'kali runtime status wsl vbox', run: async () => { const r = await apiFetch('/kali/status'); return r.status === 'RUNTIME_READY' ? `✓ Kali READY — ${r.runtime || ''} ${r.distro || ''}` : `⛔ ${r.status} — ${r.reason || ''}`; } },
     { id: 'status-llm', label: 'LLM: estado de Ollama', kw: 'ollama modelos llm status', run: async () => { const r = await apiFetch('/llm/status'); return r.up ? `✓ Ollama ON — ${(r.models || []).join(' · ')}` : '⛔ Ollama offline'; } },
