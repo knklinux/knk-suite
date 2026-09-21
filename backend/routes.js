@@ -1059,7 +1059,7 @@ router.delete('/targets/:id', (req, res) => {
 router.get('/presets', (req, res) => res.json({ ok: true, presets: require('./lib/presets').listPresets() }));
 router.post('/presets/apply', (req, res) => {
   const s = getSession();
-  const r = require('./lib/presets').applyPreset(s, req.body?.id);
+  const r = require('./lib/presets').applyPreset(s, req.body?.id, { username: req.body?.username });
   if (!r.ok) return res.json(r);
   db.saveSession(s.id, s);
   res.json(r);

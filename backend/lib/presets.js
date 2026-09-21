@@ -167,7 +167,7 @@ const PRESETS = {
     outOfScope: ['coldfusion.adobe.com', 'tracker.adobe.com'],
     rateLimitMs: 1000,
     userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux intigriti:{username}',
-    extraHeaders: { 'X-Intigriti-Username': '' },
+    extraHeaders: { 'X-Intigriti-Username': '{username}' },
     opplanBase: {
       nombre: 'Adobe Intigriti — caza',
       objetivo: 'Recon pasivo + revisión manual por niveles (N1 AI con impacto backend, N2 web/móvil, N3 identidad). Cuentas @intigriti.me.',
@@ -192,10 +192,17 @@ function listPresets() {
 
 // Aplica el preset a la sesión: devuelve el parche aplicado. Si había un
 // OPPLAN aprobado y el scope cambia, vuelve a pendiente (hay que reaprobar).
-function applyPreset(session, id) {
+function applyPreset(session, id, opts = {}) {
   const p = PRESETS[String(id || '')];
   if (!p) return { ok: false, error: 'preset desconocido', presets: listPresets() };
   const s = session || {};
+  // Username Intigriti persistente: viene en opts, o ya guardado en la sesión.
+  if (opts.username) {
+    const art0 = s.artifacts || {};
+    art0.intigritiUser = String(opts.username).slice(0, 64);
+    s.artifacts = art0;
+  }
+  const intigritiUser = (s.artifacts && s.artifacts.intigritiUser) || process.env.KNK_INTIGRITI_USER || '';
   const oldScope = JSON.stringify([...(s.scope || [])].sort());
   const newScope = JSON.stringify([...p.scope].sort());
   s.scope = [...p.scope];
@@ -203,7 +210,7 @@ function applyPreset(session, id) {
   s.program_url = p.programUrl;
   s.program_name = p.nombre;
   s.rate_limit_ms = p.rateLimitMs;
-  if (p.userAgent) s.user_agent = String(p.userAgent).replace(/\{username\}/gi, process.env.KNK_INTIGRITI_USER || '{username}');
+  if (p.userAgent) s.user_agent = String(p.userAgent).replace(/\{username\}/gi, intigritiUser || '{username}');
   const art = s.artifacts || {};
   art.presetAplicado = p.id;
   art.presetNotas = p.notas;
@@ -226,7 +233,7 @@ function applyPreset(session, id) {
       const filled = {};
       for (const [k, v] of Object.entries(p.extraHeaders)) {
         let val = String(v == null ? '' : v);
-        if (/\{username\}/i.test(val)) val = val.replace(/\{username\}/gi, process.env.KNK_INTIGRITI_USER || '');
+        if (/\{username\}/i.test(val)) val = val.replace(/\{username\}/gi, intigritiUser);
         if (!val.trim()) continue;
         filled[k] = val;
       }
