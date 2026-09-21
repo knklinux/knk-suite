@@ -376,6 +376,7 @@ function publicRun(run) {
     completedRequests: run.completedRequests,
     payloadCount: run.payloadCount,
     preset: run.preset || null,
+    match: run.match || [],
     positionCount: run.positionCount,
     maxConcurrent: run.maxConcurrent,
     baseline: run.baseline || null,
@@ -385,6 +386,7 @@ function publicRun(run) {
       index: r.index, payload: r.payload, positionIndex: r.positionIndex,
       status: r.status, length: r.length, ms: r.ms, error: r.error,
       diff: r.diff || null, bodyPreview: (r.bodyPreview || '').slice(0, 400),
+      matches: r.matches || [],
     })),
   };
 }
