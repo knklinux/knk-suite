@@ -301,6 +301,7 @@ router.get('/proxy/status', (req, res) => res.json(proxyMod.status()));
 router.post('/proxy/start', async (req, res) => { try { const p = Number(req.body?.port); res.json(await proxyMod.start({ port: Number.isFinite(p) && p >= 0 ? p : 8083 })); } catch (e) { res.status(400).json({ ok: false, error: e.message }); } });
 router.post('/proxy/stop', (req, res) => { const s = getSession(); res.json(proxyMod.stop({ sessionId: s.id })); });
 router.post('/proxy/intercept', (req, res) => res.json(proxyMod.setIntercept(Boolean(req.body?.on))));
+router.post('/proxy/strict', (req, res) => res.json(proxyMod.setStrict(req.body?.enabled !== undefined ? Boolean(req.body.enabled) : Boolean(req.body?.on))));
 router.post('/proxy/scope', (req, res) => res.json(proxyMod.setScope(Array.isArray(req.body?.scope) ? req.body.scope : [])));
 router.get('/proxy/history', (req, res) => res.json(proxyMod.history({ limit: Number(req.query.limit) || 100, q: String(req.query.q || '') })));
 router.get('/proxy/history/:id', (req, res) => { const e = proxyMod.historyEntry(req.params.id); if (!e) return res.status(404).json({ ok: false, error: 'entrada no encontrada' }); res.json(e); });
