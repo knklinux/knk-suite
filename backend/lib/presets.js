@@ -154,8 +154,11 @@ const PRESETS = {
     // Scope de la ficha pública 2026-09-21. Niveles: N1=bonus AI (hasta $15k),
     // N2=web/móvil alto valor, N3=empresarial/identidad. OOS por CLASE (ver notas).
     scope: [
+      'adobe.com', '*.adobe.com',
       'acrobat.adobe.com', '*.acrobat.adobe.com',
-      'stock.adobe.com', 'firefly.adobe.com',
+      'stock.adobe.com', 'firefly.adobe.com', '*.firefly.adobe.com',
+      'firefly-3p.ff.adobe.com', 'image-v5.ff.adobe.io', '*.ff.adobe.io',
+      'bks.adobe.com', 'commerce.adobe.com',
       'lightroom.adobe.com', '*.lightroom.adobe.com',
       'photoshop.adobe.com',
       'new.express.adobe.com', 'portfolio.ccpsx.com', 'fonts.adobe.com',
@@ -164,7 +167,7 @@ const PRESETS = {
       'ims-na1.adobelogin.com', 'federatedid-na1.services.adobe.com',
       'account.magento.com', 'repo.magento.com', 'magento.com',
     ],
-    outOfScope: ['coldfusion.adobe.com', 'tracker.adobe.com'],
+    outOfScope: ['coldfusion.adobe.com', 'tracker.adobe.com', 'cffiddle.adobe.com'],
     rateLimitMs: 1000,
     userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux intigriti:{username}',
     extraHeaders: { 'X-Intigriti-Username': '{username}' },
