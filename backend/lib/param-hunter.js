@@ -266,10 +266,45 @@ async function hunt({ url, wordlist = 'all', limit = 25, timeoutMs = 8000, maxPa
   // 2) Un canario único por ejecución: localizable y sin significado.
   const mark = canary();
   const probeValue = probeValueFor(wl, u, mark);
+  // Modo HPP (HTTP Parameter Pollution): el mismo parámetro DOS veces con
+  // valores distintos (?p=BASE&p=CANARIO y al revés). Revela si el backend
+  // toma el primero, el último, concatena o falla — vector clásico para
+  // bypass de controles, IDOR y diferencias de precio/lógica. 2 reqs/parám.
+  const isHpp = mode === 'hpp';
+  const hppBase = () => 'knkbase' + Math.random().toString(36).slice(2, 7);
   const results = [];
   let probed = 0;
   for (const { name, origin } of list) {
     if (probed >= limit) break;
+    if (isHpp && !isForm) {
+      // HPP query: orden normal (base,canario) y reverso (canario,base)
+      const trialA = new URL(u.toString());
+      trialA.searchParams.append(name, hppBase());
+      trialA.searchParams.append(name, probeValue);
+      const trialB = new URL(u.toString());
+      trialB.searchParams.append(name, probeValue);
+      trialB.searchParams.append(name, hppBase());
+      const [ra, rb] = await Promise.all([
+        net.fetch(trialA.toString(), { headers: GET_HEADERS, timeoutMs, maxRedirects: 0 }),
+        net.fetch(trialB.toString(), { headers: GET_HEADERS, timeoutMs, maxRedirects: 0 }),
+      ]);
+      probed++;
+      const ba = ra.text || '', bb = rb.text || '';
+      const inA = ba.includes(mark) || decodeEntities(ba).includes(mark);
+      const inB = bb.includes(mark) || decodeEntities(bb).includes(mark);
+      let behavior = 'not_found', detail = 'duplicado ignorado en ambos órdenes', priority = '—';
+      if (inA && inB) { behavior = 'hpp_echo_both'; detail = 'el canario aparece con el parámetro duplicado en AMBOS órdenes (concatena o refleja todo)'; priority = 'P2'; }
+      else if (inA && !inB) { behavior = 'hpp_last_wins'; detail = 'solo refleja cuando el canario va SEGUNDO → el backend toma el ÚLTIMO valor'; priority = 'P2'; }
+      else if (!inA && inB) { behavior = 'hpp_first_wins'; detail = 'solo refleja cuando el canario va PRIMERO → el backend toma el PRIMER valor'; priority = 'P2'; }
+      else {
+        const d = delta(baseLen, null, { length: ba.length });
+        if (Math.abs(d.lenDelta) >= 64) { behavior = 'param_exists'; detail = 'sin reflejo pero el duplicado cambia la respuesta (' + (d.lenDelta > 0 ? '+' : '') + d.lenDelta + 'B)'; priority = 'P3'; }
+      }
+      const dbErr = classifySqli(ba + bb);
+      if (dbErr) results.push({ param: name, origin, behavior: 'sqli_error', context: dbErr.engine, priority: 'P1', detail: `error de BD (${dbErr.engine}) con parámetro duplicado` });
+      else results.push({ param: name, origin, behavior, context: 'hpp', priority, detail });
+      continue;
+    }
     let res;
     if (isForm) {
       const form = new URLSearchParams();
