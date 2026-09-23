@@ -47,8 +47,17 @@ function set(host, cookie) {
 
 function get(host) {
   const jar = load();
-  const e = jar[normHost(host)];
-  return e && e.cookie ? e.cookie : null;
+  // Coincidencia exacta primero; si no, sube por dominios padre como un
+  // navegador (stock.adobe.com hereda la jarra de adobe.com).
+  let h = normHost(host);
+  while (h) {
+    const e = jar[h];
+    if (e && e.cookie) return e.cookie;
+    const dot = h.indexOf('.');
+    if (dot < 0) break;
+    h = h.slice(dot + 1);
+  }
+  return null;
 }
 
 /** Lista sin valores (para UI): host, fecha, longitud. */
