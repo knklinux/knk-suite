@@ -376,7 +376,7 @@ async function hunt({ url, wordlist = 'all', limit = 25, timeoutMs = 8000, maxPa
     wordlistLabel: WORDLISTS[wl].label,
     canary: mark,
     base: { status: base.status, length: baseLen },
-    mode: isForm ? 'form' : 'query',
+    mode: isHpp ? 'hpp' : (isForm ? 'form' : 'query'),
     paramsFromUrl: isForm ? 0 : targetParams.length,
     paramsFromHistory: list.filter((x) => x.origin === 'historial').length,
     paramsFromBody: list.filter((x) => x.origin === 'del-cuerpo').length,
