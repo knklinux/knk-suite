@@ -220,6 +220,28 @@ const PRESETS = {
       'Recon masivo sobre wildcard + CORS en APIs de tienda + open-redirect en compra.',
     ],
   },
+  'crypto-h1': {
+    id: 'crypto-h1',
+    nombre: 'Crypto.com — HackerOne (wildcard, Extreme hasta $1M)',
+    programUrl: 'https://hackerone.com/crypto',
+    // *.crypto.com elegible (104 resueltos). Foco 0-resueltos: tickets,
+    // experiencias, developer*, travel. App principal exige KYC: evitar.
+    scope: ['crypto.com', '*.crypto.com', 'mona.co', '*.mona.co'],
+    outOfScope: [],
+    rateLimitMs: 2000,
+    userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
+    opplanBase: {
+      nombre: 'Crypto.com H1 — caza sin login',
+      objetivo: 'Activos web 0-resueltos (tickets, experiencias, developer, travel, js) + price/nft ya mapeados. Sin KYC, sin cuentas ajenas.',
+      reglas: 'H1 > todo. App con KYC fuera de alcance práctico. Sin DoS. GraphQL-DoS capado a $500/$200: no quemar tiempo ahí.',
+    },
+    notas: [
+      'Joyas 0 resueltos: tickets.crypto.com, experiencias.crypto.com, developer-platform-api.crypto.com, developer.crypto.com.',
+      'Price (medio) y NFT ya mapeados y cerrados sin login: no repetir.',
+      'Extreme ($40k-$1M): solo pérdida masiva de fondos o PII masiva con PoC.',
+      'SendGrid/Brevo takeovers ya cerrados (dangling inerte).',
+    ],
+  },
 };
 
 function listPresets() {
