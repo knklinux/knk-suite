@@ -251,7 +251,7 @@ const PRESETS = {
     nombre: 'Kiteworks — HackerOne (nuevo 09/2026, YWH origen)',
     programUrl: 'https://hackerone.com/kiteworks',
     // Scopes del dataset 19-sep: VERIFICA en H1 antes de cazar.
-    scope: ['kiteworks.com', '*.kiteworks.com'],
+    scope: ['kiteworks.com', '*.kiteworks.com', 'bounty.kiteworks.dev', '*.bounty.kiteworks.dev'],
     outOfScope: [],
     rateLimitMs: 2500,
     userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
