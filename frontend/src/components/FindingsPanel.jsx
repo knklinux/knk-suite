@@ -10,7 +10,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 const SEV_COLORS = { critical: '#f85149', high: '#ff7b72', medium: '#d29922', low: '#58a6ff', info: '#8b949e' };
 const SEV_LABELS = { critical: 'Crítico', high: 'Alto', medium: 'Medio', low: 'Bajo', info: 'Info' };
-const STATUS_LABELS = { nuevo: 'Nuevo', confirmado: 'Confirmado', 'falso-positivo': 'Falso +', reportado: 'Reportado', descartado: 'Descartado' };
+const STATUS_LABELS = { nuevo: 'Nuevo', confirmado: 'Confirmado', 'falso-positivo': 'Falso +', reportado: 'Reportado', descartado: 'Descartado', 'pendiente-retest': 'Pend. retest', verificado: 'Verificado' };
 
 function typeOf(f) { return (f.details?.osint?.tool) || (f.type || '').split('.')[0] || 'manual'; }
 function statusOf(f) { return f.status || f.details?.triage?.status || 'nuevo'; }
@@ -21,6 +21,8 @@ export default function FindingsPanel({ api, go, sendToRepeater }) {
   const [sevFilter, setSevFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [progFilter, setProgFilter] = useState('all');
+  const [engFilter, setEngFilter] = useState('all');
+  const [engagements, setEngagements] = useState([]);
   const [q, setQ] = useState('');
   const [openId, setOpenId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -62,6 +64,8 @@ export default function FindingsPanel({ api, go, sendToRepeater }) {
   const refresh = useCallback(async () => {
     const r = await api(scope === 'all' ? '/findings?scope=all' : '/findings').catch(() => null);
     if (Array.isArray(r)) setFindings(r);
+    const e = await api('/engagements').catch(() => null);
+    if (e?.engagements) setEngagements(e.engagements);
   }, [api, scope]);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -75,6 +79,7 @@ export default function FindingsPanel({ api, go, sendToRepeater }) {
     if (sevFilter !== 'all' && f.severity !== sevFilter) return false;
     if (typeFilter !== 'all' && typeOf(f) !== typeFilter) return false;
     if (progFilter !== 'all' && (f.program || '') !== progFilter) return false;
+    if (engFilter !== 'all' && (f.engagement_id || '') !== engFilter) return false;
     if (q) {
       const needle = q.toLowerCase();
       const hay = `${f.summary} ${f.type} ${f.details?.asset || ''} ${f.details?.url || ''} ${f.program || ''} ${statusOf(f)}`.toLowerCase();
@@ -160,6 +165,10 @@ export default function FindingsPanel({ api, go, sendToRepeater }) {
           <select value={progFilter} onChange={(e) => setProgFilter(e.target.value)} style={{ padding: '4px 8px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: 11 }}>
             <option value="all">todos los programas</option>
             {programs.map((p) => <option key={p} value={p}>{p.slice(0, 40)}</option>)}
+          </select>
+          <select value={engFilter} onChange={(e) => setEngFilter(e.target.value)} style={{ padding: '4px 8px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: 11 }} title="Filtrar por engagement (proyecto)">
+            <option value="all">todos los engagements</option>
+            {engagements.map((g) => <option key={g.id} value={g.id}>{(g.name || g.id).slice(0, 40)}</option>)}
           </select>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="buscar en resumen/asset/programa…" style={{ flex: 1, minWidth: 160, padding: '4px 10px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: 11 }} />
         </div>

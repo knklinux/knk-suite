@@ -78,6 +78,18 @@ const SCHEMA = `
     output TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS engagements (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    platform TEXT DEFAULT '',
+    program_url TEXT DEFAULT '',
+    status TEXT DEFAULT 'activo',
+    scope TEXT DEFAULT '[]',
+    out_of_scope TEXT DEFAULT '[]',
+    notes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `;
 
 let _db = null;
@@ -160,7 +172,7 @@ async function initDB() {
 function migrateColumns() {
   const wanted = {
     reports: ['slug TEXT', "data TEXT DEFAULT '{}'", "status TEXT DEFAULT 'borrador'", 'updated_at DATETIME DEFAULT CURRENT_TIMESTAMP'],
-    findings: ["status TEXT DEFAULT 'nuevo'", 'program TEXT DEFAULT \'\''],
+    findings: ["status TEXT DEFAULT 'nuevo'", 'program TEXT DEFAULT \'\'', 'engagement_id TEXT DEFAULT \'\''],
     sessions: ['program_url TEXT', 'program_name TEXT', 'program_policy TEXT', "out_of_scope TEXT DEFAULT '[]'"],
   };
   for (const [table, cols] of Object.entries(wanted)) {
@@ -214,6 +226,12 @@ const stmts = {
   listTargets: stmtAller(`SELECT * FROM targets ORDER BY created_at DESC`),
   insertTarget: stmtRunner(`INSERT INTO targets (id, name, scope, user_agent, created_at) VALUES (?, ?, ?, ?, ?)`),
   deleteTarget: stmtRunner(`DELETE FROM targets WHERE id = ?`),
+  listEngagements: stmtAller(`SELECT * FROM engagements ORDER BY created_at DESC`),
+  getEngagement: stmtGetter(`SELECT * FROM engagements WHERE id = ?`),
+  insertEngagement: stmtRunner(`INSERT INTO engagements (id, name, platform, program_url, status, scope, out_of_scope, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+  updateEngagement: stmtRunner(`UPDATE engagements SET name=?, platform=?, program_url=?, status=?, scope=?, out_of_scope=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`),
+  findingsByEngagement: stmtAller(`SELECT * FROM findings WHERE engagement_id = ? ORDER BY id DESC`),
+  setFindingEngagement: stmtRunner(`UPDATE findings SET engagement_id = ? WHERE id = ?`),
 };
 
 // ── Helper Functions ─────────────────────────────────────────────
@@ -274,6 +292,58 @@ function getFinding(sessionId, id) {
   return { ...f, details: typeof f.details === 'string' ? JSON.parse(f.details || '{}') : f.details || {} };
 }
 
+/** Engagement activo de la sesión (guardado en artifacts, sin migrar sessions). */
+function getActiveEngagementId(session) {
+  try {
+    const art = typeof session.artifacts === 'string' ? JSON.parse(session.artifacts || '{}') : (session.artifacts || {});
+    return art.engagementId || null;
+  } catch { return null; }
+}
+
+function createEngagement({ name, platform, program_url, scope, out_of_scope, notes }) {
+  if (!name || !String(name).trim()) return { ok: false, error: 'nombre requerido' };
+  const id = 'eng-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+  const J = (v) => JSON.stringify(Array.isArray(v) ? v : []);
+  try {
+    stmts.insertEngagement.run(id, String(name).slice(0, 120), String(platform || '').slice(0, 40),
+      String(program_url || '').slice(0, 300), 'activo', J(scope), J(out_of_scope), String(notes || '').slice(0, 2000));
+    return { ok: true, id };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+function listEngagements() {
+  return stmts.listEngagements.all().map((e) => ({
+    ...e,
+    scope: typeof e.scope === 'string' ? JSON.parse(e.scope || '[]') : e.scope || [],
+    out_of_scope: typeof e.out_of_scope === 'string' ? JSON.parse(e.out_of_scope || '[]') : e.out_of_scope || [],
+  }));
+}
+
+/** Activa un engagement: scope/OOS/programa a la sesión + net + artifacts. */
+function activateEngagement(sessionId, engagementId) {
+  const e = stmts.getEngagement.get(String(engagementId || ''));
+  if (!e) return { ok: false, error: 'engagement no encontrado' };
+  const s = getOrCreateSession(sessionId);
+  const toArr = (v) => { try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) ? a : []; } catch { return []; } };
+  const scope = toArr(e.scope);
+  const oos = toArr(e.out_of_scope);
+  let art = {};
+  try { art = typeof s.artifacts === 'string' ? JSON.parse(s.artifacts || '{}') : (s.artifacts || {}); } catch {}
+  art.engagementId = e.id;
+  saveSession(s.id, {
+    ...s, scope, out_of_scope: oos,
+    program_url: e.program_url || s.program_url,
+    program_name: e.name || s.program_name,
+    artifacts: art,
+  });
+  try {
+    const netMod = require('./net');
+    netMod.setScope(scope);
+  } catch {}
+  try { require('./net').setOutOfScope(oos); } catch {}
+  return { ok: true, id: e.id, name: e.name, scope };
+}
+
 /** Todos los hallazgos (todas las sesiones) con contexto de programa resuelto. */
 function getAllFindings() {
   return stmts.getAllFindings.all().map(f => {
@@ -283,7 +353,7 @@ function getAllFindings() {
   });
 }
 
-const TRIAGE_STATUS = ['nuevo', 'confirmado', 'falso-positivo', 'reportado', 'descartado'];
+const TRIAGE_STATUS = ['nuevo', 'confirmado', 'falso-positivo', 'reportado', 'descartado', 'pendiente-retest', 'verificado'];
 const TRIAGE_SEV = ['critical', 'high', 'medium', 'low', 'info'];
 
 /** Triaje global por id: estado + severidad + nota (persiste en columna y details). */
@@ -390,6 +460,10 @@ module.exports = {
   getFinding,
   getAllFindings,
   triageFinding,
+  createEngagement,
+  listEngagements,
+  activateEngagement,
+  getActiveEngagementId,
   removeFinding,
   clearFindings,
   evidenceFilesOf,

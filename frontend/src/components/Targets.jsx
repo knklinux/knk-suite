@@ -52,6 +52,9 @@ export default function Targets({ api }) {
     <div>
       <h2>🎯 Targets</h2>
 
+      {/* Engagements (proyectos): agrupan scope, hallazgos y ciclo */}
+      <Engagements api={api} />
+
       {/* Infrastructure */}
       <div className="card">
         <h3>Infraestructura</h3>
@@ -122,6 +125,58 @@ export default function Targets({ api }) {
           <pre style={{ fontSize: 11, color: 'var(--green)', whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{log}</pre>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Engagements: CRUD mínimo + activar (aplica scope/OOS/programa) ──
+function Engagements({ api }) {
+  const [list, setList] = useState([]);
+  const [name, setName] = useState('');
+  const [platform, setPlatform] = useState('bugcrowd');
+  const [programUrl, setProgramUrl] = useState('');
+  const [scope, setScope] = useState('');
+  const [msg, setMsg] = useState('');
+  const refresh = async () => {
+    const r = await api('/engagements').catch(() => null);
+    if (r?.engagements) setList(r.engagements);
+  };
+  useEffect(() => { refresh(); }, []);
+  const create = async () => {
+    if (!name.trim()) { setMsg('nombre requerido'); return; }
+    const r = await api('/engagements', { method: 'POST', body: JSON.stringify({ name, platform, program_url: programUrl, scope: scope.split(/[,\n]/).map((s) => s.trim()).filter(Boolean) }) });
+    if (r?.ok) { setName(''); setProgramUrl(''); setScope(''); setMsg(''); refresh(); }
+    else setMsg(r?.error || 'no se pudo crear');
+  };
+  const activate = async (id) => {
+    const r = await api(`/engagements/${id}/activate`, { method: 'POST' });
+    setMsg(r?.ok ? `activo: ${r.name}` : (r?.error || 'no se pudo activar'));
+    refresh();
+  };
+  return (
+    <div className="card" style={{ borderLeft: '3px solid var(--primary)' }}>
+      <h3>📁 Engagements ({list.filter((e) => e.status === 'activo').length} activos)</h3>
+      {msg && <div className="muted" style={{ fontSize: 11 }}>{msg}</div>}
+      {list.map((e) => (
+        <div key={e.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, padding: '3px 0', flexWrap: 'wrap' }}>
+          <span className="badge" style={{ fontSize: 9 }}>{e.platform || '—'}</span>
+          <b>{e.name}</b>
+          <span className="muted">{(e.scope || []).length} scopes · {e.status}</span>
+          {e.status === 'activo' && <button className="btn btn-sm btn-outline" onClick={() => activate(e.id)}>▶ activar</button>}
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="nombre (p. ej. OpenAI Q4)" style={{ flex: 2, minWidth: 140, padding: '4px 8px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: 11 }} />
+        <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={{ padding: '4px 8px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: 11 }}>
+          <option value="bugcrowd">bugcrowd</option>
+          <option value="hackerone">hackerone</option>
+          <option value="intigriti">intigriti</option>
+          <option value="yeswehack">yeswehack</option>
+        </select>
+        <input value={programUrl} onChange={(e) => setProgramUrl(e.target.value)} placeholder="URL programa" style={{ flex: 2, minWidth: 140, padding: '4px 8px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: 11 }} />
+        <input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="scope coma-separado" style={{ flex: 2, minWidth: 140, padding: '4px 8px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: 11 }} />
+        <button className="btn btn-sm" onClick={create}>＋ crear</button>
+      </div>
     </div>
   );
 }

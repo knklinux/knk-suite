@@ -850,7 +850,36 @@ router.post('/findings', (req, res) => {
   if (!summary) return res.status(400).json({ ok: false, error: 'summary requerido' });
   const s = getSession();
   const r = db.addFinding(s.id, type || 'manual', String(summary), severity || 'info', details || {});
+  // Etiqueta con el engagement activo (ciclo proyecto → hallazgo → reporte).
+  try {
+    const eng = db.getActiveEngagementId(s) || req.body?.engagement_id || null;
+    if (eng) db.stmts.setFindingEngagement.run(String(eng), r.lastInsertRowid);
+  } catch {}
   res.json({ ok: true, id: r.lastInsertRowid, total: db.getFindings(s.id).length });
+});
+
+// ── Engagements (proyectos): agrupan targets, scope, hallazgos y ciclo ──
+router.get('/engagements', (req, res) => res.json({ ok: true, engagements: db.listEngagements() }));
+router.post('/engagements', (req, res) => {
+  const b = req.body || {};
+  const r = db.createEngagement({ name: b.name, platform: b.platform, program_url: b.program_url, scope: b.scope, out_of_scope: b.out_of_scope, notes: b.notes });
+  if (!r.ok) return res.status(400).json(r);
+  res.json(r);
+});
+router.post('/engagements/:id/activate', (req, res) => {
+  const s = getSession();
+  res.json(db.activateEngagement(s.id, req.params.id));
+});
+router.post('/engagements/:id/close', (req, res) => {
+  const e = db.stmts.getEngagement.get(String(req.params.id || ''));
+  if (!e) return res.status(404).json({ ok: false, error: 'engagement no encontrado' });
+  db.stmts.updateEngagement.run(e.name, e.platform, e.program_url, 'cerrado', e.scope, e.out_of_scope, e.notes || '', e.id);
+  res.json({ ok: true, id: e.id, status: 'cerrado' });
+});
+router.get('/engagements/:id/findings', (req, res) => {
+  res.json(db.stmts.findingsByEngagement.all(String(req.params.id || '')).map((f) => ({
+    ...f, details: typeof f.details === 'string' ? JSON.parse(f.details || '{}') : f.details || {},
+  })));
 });
 
 // ── Param Hunter: caza de parámetros reflejados (Top-25 XSS / BAC) ─────────
