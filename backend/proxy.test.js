@@ -21,7 +21,7 @@ const proxy = require('./lib/proxy');
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Set-Cookie', 'knktestsid=abc123; Path=/'); // sin HttpOnly/Secure/SameSite
     if (req.url.includes('secreto')) {
-      return res.end(JSON.stringify({ ok: true, config: { apiKey: 'AKIAIOSFODNN7EXAMPLE' } }));
+      return res.end(JSON.stringify({ ok: true, config: { apiKey: 'AKIAIOSFODNN7EXAMPLE' } })); // gitleaks:allow
     }
     res.end(JSON.stringify({ ok: true, path: req.url, echo: req.headers['x-knk-test'] || null }));
   });
