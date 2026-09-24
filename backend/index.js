@@ -169,6 +169,25 @@ process.on('SIGTERM', () => process.exit(0));
 // ── Start (async: init DB first) ────────────────────────────────
 (async () => {
   await initDB();
+  // ── Restaura scope/UA/ritmo de la sesión (fail-closed tras reinicio) ──
+  // Sin esto, net.js arranca con scope vacío y los gates de scope (repeater,
+  // hunter, intruder) quedan ABIERTOS hasta aplicar un preset. Detectado por
+  // hunt-verify.js. Nunca bloquea el arranque.
+  try {
+    const dbm = require('./db');
+    const s = dbm.getOrCreateSession();
+    const netm = require('./lib/net');
+    const toArr = (v) => { try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) ? a : []; } catch { return []; } };
+    const sc = toArr(s.scope);
+    if (sc.length) netm.setScope(sc);
+    if (s.user_agent) { try { netm.setUA(s.user_agent, { force: true }); } catch { try { netm.setUA(s.user_agent); } catch {} } }
+    if (s.rate_limit_ms) netm.setRateLimit(Number(s.rate_limit_ms) || 2000);
+    try {
+      const art = typeof s.artifacts === 'string' ? JSON.parse(s.artifacts || '{}') : (s.artifacts || {});
+      if (art.intigritiUser) netm.setExtraHeaders({ 'X-Intigriti-Username': String(art.intigritiUser).slice(0, 64) });
+    } catch {}
+    if (sc.length) console.log('[net] scope restaurado de la sesión (' + sc.length + ' entradas)');
+  } catch (e) { console.warn('[net] sin scope inicial:', e.message); }
   // ── Proxy de salida persistido (UI → config.json) ───────────────────────
   // KNK_PROXY (entorno) tiene prioridad; si no está, se aplica el guardado
   // desde el tab Labs. En try silencioso: nunca bloquea el arranque.
