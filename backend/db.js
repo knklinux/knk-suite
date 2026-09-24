@@ -232,6 +232,7 @@ const stmts = {
   updateEngagement: stmtRunner(`UPDATE engagements SET name=?, platform=?, program_url=?, status=?, scope=?, out_of_scope=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`),
   findingsByEngagement: stmtAller(`SELECT * FROM findings WHERE engagement_id = ? ORDER BY id DESC`),
   setFindingEngagement: stmtRunner(`UPDATE findings SET engagement_id = ? WHERE id = ?`),
+  setFindingProgram: stmtRunner(`UPDATE findings SET program = ? WHERE id = ?`),
 };
 
 // ── Helper Functions ─────────────────────────────────────────────
@@ -271,7 +272,13 @@ function saveSession(id, data) {
 }
 
 function addFinding(sessionId, type, summary, severity = 'info', details = {}) {
-  return stmts.insertFinding.run(sessionId, type, summary, severity, JSON.stringify(details));
+  const r = stmts.insertFinding.run(sessionId, type, summary, severity, JSON.stringify(details));
+  if (r.lastInsertRowid) {
+    const s = getOrCreateSession(sessionId);
+    const engagementId = getActiveEngagementId(s);
+    if (engagementId) stmts.setFindingEngagement.run(String(engagementId), r.lastInsertRowid);
+  }
+  return r;
 }
 
 /** Actualiza solo los details de un hallazgo (acumular interacciones OAST). */
@@ -339,9 +346,18 @@ function activateEngagement(sessionId, engagementId) {
   try {
     const netMod = require('./net');
     netMod.setScope(scope);
+    require('./proxy').setScope(scope);
   } catch {}
   try { require('./net').setOutOfScope(oos); } catch {}
   return { ok: true, id: e.id, name: e.name, scope };
+}
+
+function setFindingProgram(id, program) {
+  const f = stmts.getFindingById.get(Number(id));
+  if (!f) return { ok: false, error: 'hallazgo no encontrado' };
+  const value = String(program || '').slice(0, 300);
+  const r = stmts.setFindingProgram.run(value, Number(id));
+  return { ok: (r.changes || 0) > 0, id: Number(id), program: value };
 }
 
 /** Todos los hallazgos (todas las sesiones) con contexto de programa resuelto. */
@@ -459,6 +475,7 @@ module.exports = {
   getFindings,
   getFinding,
   getAllFindings,
+  setFindingProgram,
   triageFinding,
   createEngagement,
   listEngagements,

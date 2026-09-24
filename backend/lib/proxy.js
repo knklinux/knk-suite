@@ -23,6 +23,7 @@ const http = require('http');
 const https = require('https');
 const tls = require('tls');
 const net = require('net');
+const knkNet = require('./net');
 const scanner = require('./proxy-scanner');
 const dns = require('dns').promises;
 const fs = require('fs');
@@ -109,12 +110,7 @@ function serverCertFor(host) {
 // ── Barrera anti-SSRF ───────────────────────────────────────────────────────
 function isPrivateIp(ip) {
   if (net.isIP(ip) === 0) return false;
-  if (ip === '::1' || ip.startsWith('127.') || ip.startsWith('169.254.') || ip.startsWith('fe80:')) return true;
-  if (ip.startsWith('10.') || ip.startsWith('192.168.')) return true;
-  const m = ip.match(/^172\.(\d+)\./);
-  if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
-  if (ip === '169.254.169.254') return true;
-  return false;
+  return knkNet.isInternalHost(ip);
 }
 
 async function hostBlocked(host) {
@@ -410,7 +406,8 @@ function setIntercept(on) { state.intercept = Boolean(on); return { ok: true, in
 function setStrict(on) { state.dropOutOfScope = Boolean(on); return { ok: true, strict: state.dropOutOfScope }; }
 
 function setScope(list) {
-  state.scope = new Set((Array.isArray(list) ? list : []).map((h) => String(h).toLowerCase().trim()).filter(Boolean));
+  if (!Array.isArray(list)) return { ok: false, error: 'scope debe ser un array', scope: [...state.scope] };
+  state.scope = new Set(list.map((h) => String(h).toLowerCase().trim()).filter(Boolean));
   return { ok: true, scope: [...state.scope] };
 }
 
@@ -510,6 +507,8 @@ function resolvePending(id, { action = 'forward', raw = null, headers = null, bo
 async function replay(id, { raw = null } = {}) {
   const e = state.history.find((x) => x.id === Number(id));
   if (!e || e.scheme === 'tunnel') return { ok: false, error: 'entrada no reenviable' };
+  if (await hostBlocked(e.host)) return { ok: false, error: 'replay bloqueado: host privado/loopback' };
+  if (outOfScope(e.host) && state.dropOutOfScope) return { ok: false, error: 'replay bloqueado: fuera de scope (modo estricto)' };
   const parsed = raw ? parseRawRequest(raw) : parseRawRequest(buildRawRequest(e));
   if (!parsed) return { ok: false, error: 'raw inválido' };
   const path = parsed.target.startsWith('http') ? new URL(parsed.target).pathname + new URL(parsed.target).search : parsed.target;

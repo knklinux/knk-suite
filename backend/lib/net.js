@@ -206,7 +206,6 @@ let _outOfScope = [];
  * Devuelve `true` si aplicó el scope nuevo.
  */
 function setScope(scope) {
-  console.log('[TRACE setScope]', JSON.stringify(scope), new Error('trace').stack.split('\n').slice(2, 5).join(' | '));
   if (!Array.isArray(scope)) {
     _avisarConfig(`scope-tipo|${_tipo(scope)}`,
       `setScope() RECHAZADO: llegó ${_tipo(scope)} («${String(scope).slice(0, 80)}»), no un array. ` +
@@ -242,15 +241,41 @@ function isInternalIPv4(ip) {
   return false;
 }
 
-function isInternalIPv6(ip) {
-  const h = String(ip || '').toLowerCase().replace(/^\[|\]$/g, '');
-  if (h === '::' || h === '::1') return true;
-  if (h.startsWith('::ffff:')) {
-    const v4 = h.slice(7);
-    if (v4.includes('.')) return isInternalIPv4(v4);
+function ipv6Bytes(ip) {
+  let h = String(ip || '').toLowerCase().replace(/^\[|\]$/g, '').split('%')[0];
+  if (h.includes('.')) {
+    const at = h.lastIndexOf(':');
+    const n = ip4ToInt(h.slice(at + 1));
+    if (at < 0 || n === null) return null;
+    h = h.slice(0, at + 1) + ((n >>> 16) & 0xffff).toString(16) + ':' + (n & 0xffff).toString(16);
   }
-  // fe80::/10 (link-local) y fc00::/7 (ULA)
-  return /^fe[89ab]/.test(h) || /^fc/.test(h) || /^fd/.test(h);
+  if (ipMod.isIP(h) !== 6) return null;
+  const halves = h.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':').filter(Boolean) : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':').filter(Boolean) : [];
+  const missing = 8 - left.length - right.length;
+  if (missing < 0 || (halves.length === 1 && missing !== 0)) return null;
+  const words = [...left, ...Array(missing).fill('0'), ...right];
+  if (words.length !== 8 || words.some((w) => !/^[0-9a-f]{1,4}$/.test(w))) return null;
+  return words.flatMap((w) => { const n = parseInt(w, 16); return [(n >>> 8) & 255, n & 255]; });
+}
+
+function isInternalIPv6(ip) {
+  const bytes = ipv6Bytes(ip);
+  if (!bytes) return false;
+  const first = bytes[0], second = bytes[1], third = bytes[2], fourth = bytes[3];
+  if (bytes.every((b) => b === 0)) return true;
+  if (bytes.slice(0, 15).every((b) => b === 0) && bytes[15] === 1) return true;
+  if (bytes.slice(0, 10).every((b) => b === 0) && bytes[10] === 255 && bytes[11] === 255) {
+    return isInternalIPv4(`${bytes[12]}.${bytes[13]}.${bytes[14]}.${bytes[15]}`);
+  }
+  if ((first & 0xfe) === 0xfc) return true;
+  if (first === 0xfe && (second & 0xc0) === 0x80) return true;
+  if (first === 0xff) return true;
+  if (first === 0x20 && second === 0x01 && third === 0x0d && fourth === 0xb8) return true;
+  if (first === 0x01 && second === 0x00 && bytes.slice(2, 8).every((b) => b === 0)) return true;
+  return false;
 }
 
 function isInternalHost(host) {
@@ -757,10 +782,9 @@ function fetch(url, opts = {}) {
             const extras = String(process.env.KNK_ME_HOSTS_EXTRA || '').split(',').filter(Boolean);
             r = _etiquetarMe(r, { url: String(url), hostsExtra: extras });
           } catch {}
+          try { _v13Escanear(data, method + " " + url); } catch {}
           resolve(r);
         });
-        // V13: escaneo pasivo del cuerpo — nunca altera la respuesta
-        try { _v13Escanear(data, method + " " + url); } catch {}
       });
       req.on('error', (e) => { registro.status = 0; resolve({ ok: false, status: 0, headers: {}, text: '', json: () => null, error: e.message }); });
       req.on('timeout', () => { registro.status = 0; req.destroy(); resolve({ ok: false, status: 0, headers: {}, text: '', json: () => null, error: 'timeout' }); });

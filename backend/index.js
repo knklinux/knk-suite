@@ -179,7 +179,10 @@ process.on('SIGTERM', () => process.exit(0));
     const netm = require('./lib/net');
     const toArr = (v) => { try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) ? a : []; } catch { return []; } };
     const sc = toArr(s.scope);
-    if (sc.length) netm.setScope(sc);
+    if (sc.length) {
+      netm.setScope(sc);
+      try { require('./lib/proxy').setScope(sc); } catch {}
+    }
     if (s.user_agent) { try { netm.setUA(s.user_agent, { force: true }); } catch { try { netm.setUA(s.user_agent); } catch {} } }
     if (s.rate_limit_ms) netm.setRateLimit(Number(s.rate_limit_ms) || 2000);
     try {

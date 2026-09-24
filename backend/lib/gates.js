@@ -8,6 +8,7 @@
 const bizMod = require('./bizlogic');
 const altaMod = require('./alta');
 const revocationMod = require('./revocation');
+const manualMod = require('./manual');
 
 function gate(id, label, ok, detail, lesson) {
   return { id, label, ok, detail, lesson };
@@ -276,9 +277,6 @@ function exigirPorTipo(meta) {
   }
   if (/precio|checkout|line-item|coupon|cupon|descuento|reward|redeem|canje|free.entry|bypass.*pago|race|price.tamper|business.logic|logica.de.negocio/.test(t)) {
     const extra = bizMod.bizChain(meta || {});
-    // De la cadena biz, lo NO NEGOCIABLE al abrir a triage: que el servidor
-    // aceptó el valor alterado (g3) y que hay impacto (g4). Sin eso, es un
-    // sondeo/anomalía, no un bug — exactamente lo que nos quemó.
     const criticos = extra.results.filter((g) => ['biz-g3', 'biz-g4'].includes(g.id));
     const ok = criticos.every((g) => g.ok);
     return {
@@ -289,6 +287,8 @@ function exigirPorTipo(meta) {
       results: extra.results,
     };
   }
+  const cap = manualMod.capabilityCheck(meta || {});
+  if (!cap.sendable) return cap;
   return { sendable: true, summary: null, results: [] };
 }
 
@@ -297,5 +297,6 @@ module.exports = {
   corsChain, idorChain, ssrfChain, xssChain, subdomainChain, decepticonChain, sqliChain, revocationChain, openaiModelChain, reportReadiness, exigirPorTipo,
   bizChain: bizMod.bizChain, bizClases: bizMod.CLASES, bizPlaybook: bizMod.PLAYBOOK,
   altaChain: altaMod.altaChain, altaDecision: altaMod.decision, altaFases: altaMod.FASES,
+  manualPlaybook: manualMod.PLAYBOOK, manualChecklist: manualMod.CHECKLIST_FINAL, manualValidate: manualMod.validateManual, manualCapability: manualMod.capabilityCheck,
   verdictToText,
 };

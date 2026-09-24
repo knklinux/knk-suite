@@ -302,7 +302,11 @@ router.post('/proxy/start', async (req, res) => { try { const p = Number(req.bod
 router.post('/proxy/stop', (req, res) => { const s = getSession(); res.json(proxyMod.stop({ sessionId: s.id })); });
 router.post('/proxy/intercept', (req, res) => res.json(proxyMod.setIntercept(Boolean(req.body?.on))));
 router.post('/proxy/strict', (req, res) => res.json(proxyMod.setStrict(req.body?.enabled !== undefined ? Boolean(req.body.enabled) : Boolean(req.body?.on))));
-router.post('/proxy/scope', (req, res) => res.json(proxyMod.setScope(Array.isArray(req.body?.scope) ? req.body.scope : [])));
+router.post('/proxy/scope', (req, res) => {
+  const r = proxyMod.setScope(req.body?.scope);
+  if (!r.ok) return res.status(400).json(r);
+  res.json(r);
+});
 router.get('/proxy/history', (req, res) => res.json(proxyMod.history({ limit: Number(req.query.limit) || 100, q: String(req.query.q || '') })));
 router.get('/proxy/history/:id', (req, res) => { const e = proxyMod.historyEntry(req.params.id); if (!e) return res.status(404).json({ ok: false, error: 'entrada no encontrada' }); res.json(e); });
 router.get('/proxy/pending', (req, res) => res.json(proxyMod.pendingList()));
@@ -400,6 +404,10 @@ router.get('/terminal/sessions', (req, res) => {
   catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
+router.get('/manual/playbook', (req, res) => res.json({ ok: true, playbook: require('./lib/manual').PLAYBOOK }));
+router.get('/manual/checklist', (req, res) => res.json({ ok: true, checklist: require('./lib/manual').CHECKLIST_FINAL }));
+router.post('/manual/validate', (req, res) => res.json(require('./lib/manual').validateManual(req.body || {})));
+
 // ── Vault / modelos / asistente ─────────────────────────────────────
 router.get('/vault/stats', (req, res) => res.json(vault.stats()));
 router.get('/vault/search', (req, res) => res.json(vault.search(String(req.query.q || ''))));
@@ -491,6 +499,22 @@ router.post('/findings/:id/triage', (req, res) => {
   const r = db.triageFinding(req.params.id, { status: b.status, severity: b.severity, note: b.note });
   if (!r.ok) return res.status(r.error === 'hallazgo no encontrado' ? 404 : 400).json(r);
   res.json(r);
+});
+
+router.patch('/findings/:id', (req, res) => {
+  const b = req.body || {};
+  const f = db.getFinding(getSession().id, Number(req.params.id)) || db.stmts.getFindingById.get(Number(req.params.id));
+  if (!f) return res.status(404).json({ ok: false, error: 'hallazgo no encontrado' });
+  if (typeof b.program === 'string') {
+    const r = db.setFindingProgram(req.params.id, b.program);
+    if (!r.ok) return res.status(400).json(r);
+  }
+  if (b.engagement_id !== undefined) {
+    const engagementId = String(b.engagement_id || '');
+    if (engagementId && !db.stmts.getEngagement.get(engagementId)) return res.status(400).json({ ok: false, error: 'engagement no encontrado' });
+    db.stmts.setFindingEngagement.run(engagementId, Number(req.params.id));
+  }
+  res.json({ ok: true, id: Number(req.params.id) });
 });
 
 // ── Cookie-jar: sesiones del operador (caza autenticada sin pegar secretos)
