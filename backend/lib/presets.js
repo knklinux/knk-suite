@@ -113,19 +113,21 @@ const PRESETS = {
     id: 'tesla-bugcrowd',
     nombre: 'Tesla — Bugcrowd',
     programUrl: 'https://bugcrowd.com/engagements/tesla',
-    // VERIFICA el panel: el Brief manda (OOS y reglas cambian).
-    scope: ['tesla.com', '*.tesla.com'],
-    outOfScope: [],
+    // Scope de la ficha 2026-09-24 (no-vehículo P1 $3k-10k; vehículo/hardware por email).
+    scope: ['tesla.com', '*.tesla.com', 'tesla.cn', '*.tesla.cn', 'tesla.services', '*.tesla.services', 'teslamotors.com', '*.teslamotors.com', 'solarcity.com', '*.solarcity.com', 'teslainsuranceservices.com', '*.teslainsuranceservices.com'],
+    outOfScope: ['employeefeedback.tesla.com', 'energysupport.tesla.com', 'engage.tesla.com', 'feedback.tesla.com', 'feedback.teslamotors.com', 'ir.tesla.com', 'ir.teslamotors.com', 'mkto.teslamotors.com', 'shop.eu.teslamotors.com', 'maxwell.com', '*.maxwell.com'],
     rateLimitMs: 2500,
     userAgent: 'knk-suite-researcher/2.0 bug-bounty-knk_linux',
     opplanBase: {
       nombre: 'Tesla Bugcrowd — caza',
-      objetivo: 'Recon pasivo + revisión manual de superficie web/API con cuenta propia donde aplique.',
-      reglas: 'Brief > todo. Solo cuentas propias. Sin DoS/fuerza bruta/scraping agresivo. Staging decommissioned (NXDOMAIN) no es hallazgo.',
+      objetivo: 'Web/API no-vehículo con cuenta propia (@bugcrowdninja.com). Vehículo/hardware SOLO por email (vulnerablereporting@tesla.com). Acceso a datos ajenos → parar + reportar en 24h.',
+      reglas: 'Brief > todo. Solo cuentas/productos propios. Sin DoS/fuerza bruta sin permiso. Si piden parar: parar ya. Superchargers OOS. Staging decommissioned (NXDOMAIN) no es hallazgo.',
     },
     notas: [
+      'OOS por clase (no reportar): MFA, bypass-WAF, open-redirect, IP-interna, ficheros no sensibles, phishing, self-XSS, text-injection, email-spoofing (SPF/DKIM/DMARC), errores verbosos, fingerprinting, clickjacking, CSRF-bajo, cookie-flags, rate-limit, bruteforce-login, mixed-content, user-enum (salvo incremento numérico excepcional), headers, TLS, DoS, software viejo, libs-conocidas sin PoC.',
+      'service.tesla.com: solo /docs/* OOS (resto en scope por wildcard). shop.tesla.com EN scope (solo shop.eu.teslamotors.com OOS).',
       'Staging viejo (ai-api-stg/uat, acs2-poc.voice) = NXDOMAIN decommissioned, no reportable.',
-      'www con bot-wall 403: la caza real es tras login o en APIs.',
+      'shop/www con bot-wall 403: la caza real es tras login o en APIs.',
     ],
   },
   '1password-bugcrowd': {
